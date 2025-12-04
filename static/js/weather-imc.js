@@ -13,8 +13,6 @@ console.log("[IMC] init weather-imc.js");
   }
 
   // ====== AVWX METAR 取得関数（サーバのプロキシ経由） ======
-  // ★ ここが重要：ブラウザから直接 https://avwx.rest/... には行かない。
-  //    /api/metar?icao=XXXX という自前の Flask API を叩く。
   async function fetchMetar(icao) {
     const clean = String(icao || "").trim().toUpperCase();
     if (!clean) {

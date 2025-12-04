@@ -34,15 +34,11 @@ console.log("[NAVLOG] init navlog.js");
   }
 
   function calcWindEffects(TC_deg, TAS, windDirFrom_deg, windSpd) {
-    const beta = toRad(
-      norm360(windDirFrom_deg + 180) - norm360(TC_deg)
-    );
+    const beta = toRad(norm360(windDirFrom_deg + 180) - norm360(TC_deg));
     const xwind = windSpd * Math.sin(beta);
     const hwind = windSpd * Math.cos(beta);
     const WCA = toDeg(
-      Math.asin(
-        Math.max(-1, Math.min(1, xwind / Math.max(1, TAS)))
-      )
+      Math.asin(Math.max(-1, Math.min(1, xwind / Math.max(1, TAS))))
     );
     const GS = Math.max(1, TAS * Math.cos(toRad(WCA)) + hwind);
     return { WCA, GS };
@@ -55,12 +51,8 @@ console.log("[NAVLOG] init navlog.js");
   const EPS = 1e-9;
 
   function buildGridFromPoints(points) {
-    const lats = [...new Set(points.map((p) => p.lat))].sort(
-      (a, b) => a - b
-    );
-    const lons = [...new Set(points.map((p) => p.lon))].sort(
-      (a, b) => a - b
-    );
+    const lats = [...new Set(points.map((p) => p.lat))].sort((a, b) => a - b);
+    const lons = [...new Set(points.map((p) => p.lon))].sort((a, b) => a - b);
     const map = new Map();
     for (const p of points) map.set(`${p.lat},${p.lon}`, p.d);
     return { lats, lons, map };
@@ -157,7 +149,7 @@ console.log("[NAVLOG] init navlog.js");
     );
   }
 
-  // ====== NAVLOG 表示 ======
+  // ====== NAVLOG 表示用セル生成 ======
   function cell(col, row, content, extra = "") {
     return `<div class="cell ${extra}" style="grid-column:${col}; grid-row:${row};">${content}</div>`;
   }
@@ -171,7 +163,7 @@ console.log("[NAVLOG] init navlog.js");
     return `<span class="${cls}">${n}°${dir}</span>`;
   }
 
-  // ★GFS API は後回し：UI の風向風速を全レグに適用するだけ
+  // ====== GFS から各レグ中点の風を取得（gfs-wind.js を利用） ======
   async function fetchLegWinds(legs, altFt) {
     const uiDir = parseFloat(
       document.getElementById("windDir")?.value
@@ -179,15 +171,54 @@ console.log("[NAVLOG] init navlog.js");
     const uiSpd = parseFloat(
       document.getElementById("windSpd")?.value
     );
-    const out = {};
-    if (Number.isFinite(uiDir) && Number.isFinite(uiSpd)) {
-      legs.forEach((_, i) => {
-        out[i] = { dir: uiDir, spd: uiSpd };
-      });
+
+    const fallbackAll = () => {
+      const out = {};
+      if (Number.isFinite(uiDir) && Number.isFinite(uiSpd)) {
+        legs.forEach((_, i) => {
+          out[i] = { dir: uiDir, spd: uiSpd };
+        });
+      }
+      return out;
+    };
+
+    if (typeof window.fetchGfsWindsForLegs !== "function") {
+      console.warn(
+        "[NAVLOG] fetchGfsWindsForLegs not found, using UI wind only"
+      );
+      return fallbackAll();
     }
-    return out;
+
+    try {
+      const gfsMap = await window.fetchGfsWindsForLegs(legs, altFt);
+      const out = {};
+
+      for (let i = 0; i < legs.length; i++) {
+        const gfs = gfsMap && gfsMap[i];
+        if (
+          gfs &&
+          Number.isFinite(gfs.dir) &&
+          Number.isFinite(gfs.spd)
+        ) {
+          out[i] = { dir: gfs.dir, spd: gfs.spd };
+        } else if (
+          Number.isFinite(uiDir) &&
+          Number.isFinite(uiSpd)
+        ) {
+          out[i] = { dir: uiDir, spd: uiSpd };
+        }
+      }
+      return out;
+    } catch (e) {
+      console.warn(
+        "[NAVLOG] GFS wind fetch failed, using UI wind only:",
+        e
+      );
+      return fallbackAll();
+    }
   }
 
+  // ====== NAVLOG 表示メイン ======
   async function showNavLog(points, TAS) {
     const windDirUI = parseFloat(
       document.getElementById("windDir").value
@@ -214,12 +245,11 @@ console.log("[NAVLOG] init navlog.js");
       baseMin = h * 60 + m;
     }
 
-    // ひとまず UI 高度から等圧面を選ぶ logic は後回し（altFt は fetchLegWinds 内で使える）
     const altFt = parseFloat(
       document.getElementById("alt").value || "3000"
     );
 
-    // まずレグの基本情報（距離 / TC / VAR 等）を作る
+    // まずレグの基本情報（距離 / TC / VAR / 中点）を作る
     const legs = [];
     for (let i = 0; i < points.length - 1; i++) {
       const A = points[i].latlng;
@@ -237,15 +267,19 @@ console.log("[NAVLOG] init navlog.js");
 
       legs.push({
         fromName: points[i].name || points[i].label || `WP${i + 1}`,
-        toName: points[i + 1].name || points[i + 1].label || `WP${i + 2}`,
+        toName:
+          points[i + 1].name ||
+          points[i + 1].label ||
+          `WP${i + 2}`,
         TC,
         VAR,
+        dist,
+        mid,
       });
     }
 
-    // レグごとの風向風速（今は UI の値をコピペするだけ）
+    // レグごとの風向風速を GFS から取得（失敗時は UI 値フォールバック）
     const legWinds = await fetchLegWinds(legs, altFt);
-    // console.log("[NAVLOG] leg-winds from UI:", legWinds);
 
     // ここから WCA, GS, TH, MH, CH 等を計算
     const computedLegs = [];
@@ -277,7 +311,9 @@ console.log("[NAVLOG] init navlog.js");
 
       const TH = norm360(base.TC + WCA);
       const MH = norm360(TH + base.VAR);
-      const CH = norm360(MH + (Number.isFinite(DEV) ? DEV : 0));
+      const CH = norm360(
+        MH + (Number.isFinite(DEV) ? DEV : 0)
+      );
 
       computedLegs.push({
         fromName: base.fromName,
@@ -292,10 +328,7 @@ console.log("[NAVLOG] init navlog.js");
         VAR: base.VAR,
         DEV,
         GS,
-        dist: calcDistanceNM(
-          points[i].latlng,
-          points[i + 1].latlng
-        ),
+        dist: base.dist,
       });
     }
 
@@ -424,7 +457,13 @@ console.log("[NAVLOG] init navlog.js");
         String(Math.round(g.CH)).padStart(3, "0"),
         spanTopCls
       );
-      html += cellSpan(7, baseRow, 2, Math.round(g.GS), spanTopCls);
+      html += cellSpan(
+        7,
+        baseRow,
+        2,
+        Math.round(g.GS),
+        spanTopCls
+      );
       html += cellSpan(
         8,
         baseRow,
@@ -493,4 +532,5 @@ console.log("[NAVLOG] init navlog.js");
 
   // グローバル公開
   window.showNavLog = showNavLog;
+  window.fitNavGrid = fitNavGrid;
 })();
