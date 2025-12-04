@@ -163,8 +163,8 @@ console.log("[NAVLOG] init navlog.js");
     return `<span class="${cls}">${n}°${dir}</span>`;
   }
 
-  // ====== GFS から各レグ中点の風を取得（gfs-wind.js を利用） ======
-  async function fetchLegWinds(legs, altFt) {
+  // ====== GFS から中心1点だけ風を取得し、全レグに適用 ======
+  async function fetchLegWinds(legs, altFt, allPoints) {
     const uiDir = parseFloat(
       document.getElementById("windDir")?.value
     );
@@ -172,6 +172,7 @@ console.log("[NAVLOG] init navlog.js");
       document.getElementById("windSpd")?.value
     );
 
+    // フォールバック：UI に入力された風を全レグに適用
     const fallbackAll = () => {
       const out = {};
       if (Number.isFinite(uiDir) && Number.isFinite(uiSpd)) {
@@ -182,33 +183,77 @@ console.log("[NAVLOG] init navlog.js");
       return out;
     };
 
-    if (typeof window.fetchGfsWindsForLegs !== "function") {
+    if (typeof window.fetchGfsWindAt !== "function") {
       console.warn(
-        "[NAVLOG] fetchGfsWindsForLegs not found, using UI wind only"
+        "[NAVLOG] fetchGfsWindAt not found, using UI wind only"
       );
       return fallbackAll();
     }
 
     try {
-      const gfsMap = await window.fetchGfsWindsForLegs(legs, altFt);
-      const out = {};
+      // 出発地・経由地・目的地を含む全地点から「中心」を計算
+      let sumLat = 0;
+      let sumLon = 0;
+      let count = 0;
 
-      for (let i = 0; i < legs.length; i++) {
-        const gfs = gfsMap && gfsMap[i];
-        if (
-          gfs &&
-          Number.isFinite(gfs.dir) &&
-          Number.isFinite(gfs.spd)
-        ) {
-          out[i] = { dir: gfs.dir, spd: gfs.spd };
-        } else if (
-          Number.isFinite(uiDir) &&
-          Number.isFinite(uiSpd)
-        ) {
-          out[i] = { dir: uiDir, spd: uiSpd };
-        }
+      if (Array.isArray(allPoints) && allPoints.length > 0) {
+        allPoints.forEach((p) => {
+          const ll = p.latlng;
+          if (
+            Array.isArray(ll) &&
+            typeof ll[0] === "number" &&
+            typeof ll[1] === "number"
+          ) {
+            sumLat += ll[0];
+            sumLon += ll[1];
+            count++;
+          }
+        });
       }
-      return out;
+
+      // 念のため、allPoints が空だった場合はレグ中点から取る
+      if (count === 0 && Array.isArray(legs) && legs.length > 0) {
+        legs.forEach((leg) => {
+          const m = leg.mid;
+          if (
+            Array.isArray(m) &&
+            typeof m[0] === "number" &&
+            typeof m[1] === "number"
+          ) {
+            sumLat += m[0];
+            sumLon += m[1];
+            count++;
+          }
+        });
+      }
+
+      if (count === 0) {
+        console.warn(
+          "[NAVLOG] no valid points for GFS center; using UI wind"
+        );
+        return fallbackAll();
+      }
+
+      const centerLat = sumLat / count;
+      const centerLon = sumLon / count;
+
+      // ★ここで 1 回だけ /api/gfs_wind を叩いて、中心1点の風を取得
+      const gfs = await window.fetchGfsWindAt(
+        centerLat,
+        centerLon,
+        altFt
+      );
+
+      const out = {};
+      if (gfs && Number.isFinite(gfs.dir) && Number.isFinite(gfs.spd)) {
+        legs.forEach((_, i) => {
+          out[i] = { dir: gfs.dir, spd: gfs.spd };
+        });
+        return out;
+      }
+
+      // GFS が取れなければ UI フォールバック
+      return fallbackAll();
     } catch (e) {
       console.warn(
         "[NAVLOG] GFS wind fetch failed, using UI wind only:",
@@ -278,8 +323,8 @@ console.log("[NAVLOG] init navlog.js");
       });
     }
 
-    // レグごとの風向風速を GFS から取得（失敗時は UI 値フォールバック）
-    const legWinds = await fetchLegWinds(legs, altFt);
+    // レグごとの風向風速を「中心1点の GFS」で決定（失敗時は UI 値フォールバック）
+    const legWinds = await fetchLegWinds(legs, altFt, points);
 
     // ここから WCA, GS, TH, MH, CH 等を計算
     const computedLegs = [];
