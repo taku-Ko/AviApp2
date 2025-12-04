@@ -19,6 +19,8 @@ console.log("[MAP] init map-core.js");
       { attribution: "GSI 航空写真" }
     ),
   };
+
+  // ★ ベースマップは「標準地図」をデフォルト ON ★
   baseLayers["標準地図"].addTo(map);
 
   const layersCtl = L.control
@@ -60,7 +62,7 @@ console.log("[MAP] init map-core.js");
   });
   map.addControl(new TabControl({ position: "topright" }));
 
-  // グローバル公開
+  // グローバル公開（他JSから使う）
   window.navMap = map;
   window.navLayersCtl = layersCtl;
 
@@ -103,7 +105,8 @@ console.log("[MAP] init map-core.js");
 
   // ====== ASP / APT / NAV ロード ======
   (async () => {
-    const fitGroup = L.featureGroup().addTo(map);
+    // ★ 初期表示には使わず、fitBounds 用のグループ（map には add しない） ★
+    const fitGroup = L.featureGroup();
 
     // --- 空域（ASP） ---
     const asp = await addGeoJsonOverlay(PATH_ASP, {
@@ -133,8 +136,8 @@ console.log("[MAP] init map-core.js");
       },
     });
     if (asp) {
+      // ★ レイヤコントロールには登録するが、初期状態では map に add しない（OFF） ★
       layersCtl.addOverlay(asp, "空域（ASP）");
-      asp.addTo(map);
       fitGroup.addLayer(asp);
     }
 
@@ -193,6 +196,10 @@ console.log("[MAP] init map-core.js");
     if (apt) {
       layersCtl.addOverlay(apt, "空港（APT）");
 
+      // ★ 空港（APT）はデフォルトで ON にする ★
+      apt.addTo(map);
+      fitGroup.addLayer(apt);
+
       // METAR / IMC 用 station リスト作成
       airportStations = (apt.toGeoJSON().features || [])
         .map((ft) => {
@@ -228,10 +235,12 @@ console.log("[MAP] init map-core.js");
       },
     });
     if (nav) {
+      // ★ NAV もコントロールに登録するが、初期は OFF ★
       layersCtl.addOverlay(nav, "無線施設（NAV）");
       fitGroup.addLayer(nav);
     }
 
+    // 地図の表示範囲だけ ASP / APT / NAV を使って合わせる
     if (fitGroup.getLayers().length > 0) {
       map.fitBounds(fitGroup.getBounds(), { padding: [20, 20] });
     }
