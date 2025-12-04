@@ -1,10 +1,6 @@
 // static/js/weather-imc.js
 console.log("[IMC] init weather-imc.js");
 
-// ====== AVWX 設定 ======
-// ★ここを自分のトークンに置き換えてください
-const AVWX_TOKEN = "wAGbpDpafyuVP9YV_JT4rGofqkpe_pprXhiD4l8Twnw";
-
 (function () {
   const map = window.navMap;
   const layersCtl = window.navLayersCtl;
@@ -16,21 +12,35 @@ const AVWX_TOKEN = "wAGbpDpafyuVP9YV_JT4rGofqkpe_pprXhiD4l8Twnw";
     return;
   }
 
-  // ====== AVWX METAR 取得共通関数 ======
+  // ====== AVWX METAR 取得関数（サーバのプロキシ経由） ======
+  // ★ ここが重要：ブラウザから直接 https://avwx.rest/... には行かない。
+  //    /api/metar?icao=XXXX という自前の Flask API を叩く。
   async function fetchMetar(icao) {
-    const url = `https://avwx.rest/api/metar/${icao}?format=json&onfail=cache`;
-    const headers = { Accept: "application/json" };
-    if (AVWX_TOKEN && AVWX_TOKEN !== "YOUR_AVWX_TOKEN_HERE") {
-      headers["Authorization"] = `Bearer ${AVWX_TOKEN}`;
+    const clean = String(icao || "").trim().toUpperCase();
+    if (!clean) {
+      throw new Error("icao empty");
     }
-    const r = await fetch(url, { headers });
-    if (!r.ok) throw new Error(`${icao} METAR ${r.status}`);
+
+    const url = `/api/metar?icao=${encodeURIComponent(clean)}`;
+
+    const r = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`${clean} METAR proxy error ${r.status}: ${text}`);
+    }
+
     const text = await r.text();
-    if (!text.trim()) throw new Error(`${icao} empty body`);
+    if (!text.trim()) {
+      throw new Error(`${clean} empty body`);
+    }
     return JSON.parse(text);
   }
 
-  // グローバル公開：空港クリック時の METAR 表示用
+  // グローバル公開：空港クリック時の METAR 表示用（map-core.js から利用）
   window.avwxFetchMetar = fetchMetar;
 
   // ====== 10NM グリッド（日本全域） ======
