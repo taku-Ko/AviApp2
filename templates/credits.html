@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>出典・利用データについて | 航法計画作成支援システム</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans JP", sans-serif;
+      margin: 0;
+      padding: 16px;
+      line-height: 1.6;
+      background: #fafafa;
+      color: #222;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    h2 {
+      font-size: 16px;
+      margin-top: 20px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 2px;
+    }
+    p {
+      margin: 6px 0;
+    }
+    ul {
+      margin: 4px 0 12px 20px;
+    }
+    a {
+      color: #1976d2;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .note {
+      font-size: 12px;
+      color: #555;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>出典・利用データについて</h1>
+  <p>
+    本アプリケーション「航法計画作成支援システム」では、
+    航法計画および表示にあたり以下の外部データ・サービスを利用しています。
+  </p>
+
+  <h2>空域・空港・無線航法施設データ</h2>
+  <p>
+    空域（ASP）、空港（APT）、無線施設（NAV）の位置情報および属性情報は、
+    OpenAIP が提供するオープンデータを基に整備・加工して使用しています。
+  </p>
+  <ul>
+    <li>
+      OpenAIP オープンデータ<br>
+      Website:
+      <a href="https://www.openaip.net" target="_blank" rel="noopener noreferrer">
+        https://www.openaip.net
+      </a>
+    </li>
+  </ul>
+
+  <h2>航空気象（METAR／フライトルール区分）</h2>
+  <p>
+    各空港の METAR 情報および VFR / MVFR / IFR などの飛行カテゴリ（flight rules）は、
+    AVWX REST API を通じて取得しています。
+  </p>
+  <ul>
+    <li>
+      AVWX REST API<br>
+      Website:
+      <a href="https://avwx.rest" target="_blank" rel="noopener noreferrer">
+        https://avwx.rest
+      </a>
+    </li>
+  </ul>
+
+  <h2>数値予報データ（風向・風速）</h2>
+  <p>
+    巡航高度に最も近い等圧面の風向・風速データは、
+    Open-Meteo API を通じて GFS 数値予報モデルに基づく予報値を取得し、
+    航法ログ各レグの風として利用しています。
+  </p>
+  <ul>
+    <li>
+      Open-Meteo API（GFS モデル）<br>
+      Website:
+      <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer">
+        https://open-meteo.com
+      </a>
+    </li>
+  </ul>
+
+  <h2>地磁気偏角データ</h2>
+  <p>
+    真方位から磁方位への変換（磁気偏差：VAR）の算出には、
+    国土地理院が公表する地磁気データを基に作成した偏角グリッドを利用しています。
+  </p>
+  <ul>
+    <li>
+      国土地理院 地磁気データ<br>
+      Website:
+      <a href="https://www.gsi.go.jp/" target="_blank" rel="noopener noreferrer">
+        https://www.gsi.go.jp/
+      </a>
+    </li>
+  </ul>
+
+  <p class="note">
+    ※ 各種データは、提供元の利用規約およびライセンスに従って使用しています。<br>
+    ※ 本アプリケーションによる計算結果・表示内容は参照用であり、
+       実運航の最終判断は必ず公式情報および運航者の責任にて行ってください。
+  </p>
+</body>
+</html>
