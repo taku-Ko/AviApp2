@@ -145,6 +145,21 @@
     #plot-button-bar:disabled, #pick-run-bar:disabled{
       opacity: .6;
     }
+
+    /* ====== Credits link ====== */
+    #credits-link {
+      font-size: 11px;
+      color: #555;
+      margin-top: 8px;
+      text-align: right;
+    }
+    #credits-link a {
+      color: #1976d2;
+      text-decoration: none;
+    }
+    #credits-link a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 
@@ -234,6 +249,11 @@
         <div id="results"></div>
       </div>
 
+      <!-- 出典・ライセンスへのリンク -->
+      <div id="credits-link">
+        <a href="{{ url_for('credits') }}" target="_blank" rel="noopener noreferrer">出典・ライセンス</a>
+      </div>
+
       <!-- ★実行→リセット固定バー -->
       <div id="actionBar">
         <button id="plot-button-bar" onclick="window.plotRoute()">実行（地名入力）</button>
@@ -246,6 +266,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="{{ url_for('static', filename='js/map-core.js') }}"></script>
   <script src="{{ url_for('static', filename='js/weather-imc.js') }}"></script>
+  <!-- GFS 風向風速用 -->
   <script src="{{ url_for('static', filename='js/gfs-wind.js') }}"></script>
   <script src="{{ url_for('static', filename='js/navlog.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-main.js') }}"></script>

@@ -20,6 +20,13 @@ def index():
     return render_template("map.html")
 
 
+# ====== ルート：出典ページ ======
+@app.route("/credits")
+def credits():
+    # templates/credits.html を表示
+    return render_template("credits.html")
+
+
 # ====== AVWX METAR プロキシ API ======
 @app.route("/api/metar")
 def api_metar():
