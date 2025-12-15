@@ -1,0 +1,435 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [140.128333, 41.97]
+      },
+      "properties": {
+        "icao": null,
+        "name_ja": "乙部町ヘリコプター場外離着陸場",
+        "airport_type": "場外離着陸場（ヘリポート）",
+        "usage": "公共用",
+        "elevation_ft": 41.0,
+        "elevation_m": 12.5,
+        "prefecture": "北海道",
+        "municipality": "爾志郡乙部町",
+        "address_ja": "北海道爾志郡乙部町字姫川160",
+        "runways": [
+          {
+            "designation": "11/29",
+            "length_m": 25,
+            "width_m": 20,
+            "surface": "Asphalt-Concrete",
+            "strength_kg_lb": "AUW 9000 (19840)"
+          }
+        ],
+        "frequencies": [],
+        "phones": {
+          "admin": "0139-62-2311",
+          "admin_fax": "0139-62-2939",
+          "flight_plan": "0138-57-1738",
+          "flight_plan_fax": "0138-59-4745",
+          "met": "0138-57-4003"
+        },
+        "op_hours": "0830-1700（おおむね日没まで）",
+        "fuel": []
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [141.879722, 43.483056]
+      },
+      "properties": {
+        "icao": null,
+        "name_ja": "砂川ヘリポート",
+        "airport_type": "ヘリポート",
+        "usage": "公共用",
+        "elevation_ft": 70.5,
+        "elevation_m": 21.5,
+        "prefecture": "北海道",
+        "municipality": "砂川市",
+        "address_ja": "北海道砂川市西豊沼231-6",
+        "runways": [
+          {
+            "designation": "04/22",
+            "length_m": 25,
+            "width_m": 20,
+            "surface": "Asphalt-Concrete",
+            "strength_kg_lb": "AUW 9000 (19840)"
+          }
+        ],
+        "frequencies": [
+          {
+            "service": "FS",
+            "callsign": "Takikawa Flight Service",
+            "freq_mhz": 130.65
+          }
+        ],
+        "phones": {
+          "admin": "0125-54-2121",
+          "admin_fax": "0125-54-2568",
+          "flight_plan": "0123-23-4102",
+          "met": "011-611-6121",
+          "heliport_office": "0125-52-9220"
+        },
+        "op_hours": "0700-1700（おおむね日没まで）",
+        "fuel": [
+          "JET A-1"
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [141.758889, 45.100556]
+      },
+      "properties": {
+        "icao": null,
+        "name_ja": "豊富ヘリポート",
+        "airport_type": "ヘリポート",
+        "usage": "公共用",
+        "elevation_ft": 39.4,
+        "elevation_m": 12.0,
+        "prefecture": "北海道",
+        "municipality": "天塩郡豊富町",
+        "address_ja": "北海道天塩郡豊富町字上サロベツ264-2",
+        "runways": [
+          {
+            "designation": "12/30",
+            "length_m": 25,
+            "width_m": 20,
+            "surface": "Asphalt-Concrete",
+            "strength_kg_lb": "AUW 9000 (19840)"
+          }
+        ],
+        "frequencies": [],
+        "phones": {
+          "admin": "0162-82-1001",
+          "admin_fax": "0162-82-2806",
+          "flight_plan": "0162-27-2727",
+          "met": "0162-26-2638"
+        },
+        "op_hours": "0700-1700（日出後および日没前に限る）",
+        "fuel": [
+          "JET A-1"
+        ]
+      }
+    },
+    {
+  "type": "Feature",
+  "properties": {
+    "icao": null,
+    "name_ja": "米沢ヘリポート",
+    "airport_type": "heliport",
+    "elevation_ft": 858,
+    "usage": "public",
+    "op_hours": "0900-1700 (日没)",
+    "frequencies": [],
+    "phone": {
+      "admin": "0238-28-4941",
+      "fsc": "022-383-6382",
+      "weather": "022-383-2821"
+    },
+    "fuel": [
+      "JET A-1"
+    ],
+    "helipads": [
+      {
+        "designator": "14/32",
+        "dimension_m": "25 x 20",
+        "dimension_ft": "82 x 66",
+        "surface": "Asphalt-Concrete",
+        "strength": "AUW 9000 (19840)"
+      },
+      {
+        "designator": "17/35",
+        "dimension_m": "25 x 20",
+        "dimension_ft": "82 x 66",
+        "surface": "Asphalt-Concrete",
+        "strength": "AUW 9000 (19840)"
+      }
+    ]
+  },
+  "geometry": {
+    "type": "Point",
+    "coordinates": [
+      140.09944444444446,
+      37.91305555555555
+    ]
+  }
+},    {
+      "type": "Feature",
+      "properties": {
+        "icao": "",
+        "name_ja": "群馬ヘリポート",
+        "apt_type": "ヘリポート",
+        "elevation_ft": 243,
+        "public_private": "公共用",
+        "frequencies": [
+          {
+            "service": "FS",
+            "callsign": "Gunma Flight Service",
+            "frequency_mhz": 130.775
+          }
+        ],
+        "phone_admin": "027-265-0100",
+        "phone_weather": "03-5757-9680",
+        "operation_hours": "0700-1900（但し、日没後を除く）",
+        "fuel": "JET A-1"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [139.106944, 36.317778]
+      }
+    },{
+  "type": "Feature",
+  "properties": {
+    "icao": "",
+    "name_ja": "高崎ヘリポート",
+    "apt_type": "ヘリポート",
+    "elevation_ft": 292,
+    "public_private": "公共用",
+    "frequencies": [],
+    "phone_admin": "027-321-1215",
+    "phone_weather": "03-5757-9680",
+    "operation_hours": "SR-SS (日出〜日没)",
+    "fuel": ""
+  },
+  "geometry": {
+    "type": "Point",
+    "coordinates": [138.993611, 36.331111]
+  }
+},
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "1303-01",
+        "icao": "",
+        "name_ja": "つくばヘリポート",
+        "kind": "ヘリポート",
+        "elevation_ft": 26,
+        "public_use": "非公共用",
+        "frequencies": [
+          {
+            "service": "Local",
+            "callsign": "Tsukuba Local",
+            "frequency_mhz": 122.6,
+            "note": "航空機相互間周波数"
+          },
+          {
+            "service": "Local",
+            "callsign": "Tsukuba Local",
+            "frequency_mhz": 122.2
+          },
+          {
+            "service": "Tower",
+            "callsign": "Kasumigaura Tower",
+            "frequency_mhz": 126.2
+          }
+        ],
+        "phones": {
+          "admin": "029-857-7227（つくば航空株式会社）",
+          "met": "0476-32-6612（成田航空地方気象台予報課）"
+        },
+        "ops_hours": "0900-1700（ただし日没が17時前であるときは日没まで）",
+        "fuel": "JET A-1, AVGAS 100（飯岡建設株式会社, TEL 029-857-7707, 0830-1700）",
+        "remarks": "場外離着陸場。RJAK（霞ヶ浦飛行場）Kasumigaura Tower 122.2MHz の管制塔管制圏（ARP を中心とする半径 5NM）と重複し、副制限区域や隣接制限区域も近接しているため、進入・離陸時は空域・障害物に十分注意すること。周辺の道路交通量および地上施設にも配慮して運航すること。"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          140.131111,
+          36.1175
+        ]
+      }
+    },{
+  "type": "Feature",
+  "properties": {
+    "icao": null,
+    "name_ja": "栃木ヘリポート",
+    "name_en": "Tochigi Heliport",
+    "aerodrome_type": "ヘリポート",
+    "public_private": "公共用",
+    "elevation_ft": 426,
+    "frequencies": [
+      {
+        "service": "Flight Service",
+        "call_sign": "Tochigi Flight Service",
+        "type": "FS",
+        "frequency_mhz": 130.8
+      }
+    ],
+    "phones": {
+      "management": "028-677-4545",
+      "weather": "03-5757-9680"
+    },
+    "hours": "0700-1900（日没）",
+    "fuel": [
+      "JET A-1",
+      "AVGAS100"
+    ]
+  },
+  "geometry": {
+    "type": "Point",
+    "coordinates": [140.006111, 36.559722]
+  }
+},  {
+    "type": "Feature",
+    "properties": {
+      "icao": "RJTI",
+      "name_ja": "東京ヘリポート",
+      "name_en": "Tokyo Heliport",
+      "airport_type": "ヘリポート",
+      "elevation_ft": 16,
+      "use": "公共用",
+      "frequencies": [
+        {
+          "service": "Flight Service",
+          "call_sign": "Koto Flight Service",
+          "frequency_mhz": 122.7
+        }
+      ],
+      "phones": {
+        "management": "03-3522-2681",
+        "weather": "03-3522-2681"
+      },
+      "operation_hours": "0830〜1630",
+      "fuel": "JET A-1"
+    },
+    "geometry": {
+      "type": "Point",
+      "coordinates": [139.839444, 35.636111]
+    }
+  },  {
+    "type": "Feature",
+    "properties": {
+      "icao": "",
+      "name_ja": "静岡ヘリポート",
+      "name_en": "Shizuoka HP",
+      "airport_type": "ヘリポート",
+      "elevation_ft": 34,
+      "use": "公共用",
+      "frequencies": [
+        {
+          "service": "FS",
+          "call_sign": "Shizuoka Flight Service",
+          "frequency_mhz": 130.65
+        },
+        {
+          "service": "TWR",
+          "call_sign": "Shizuhama Tower",
+          "frequency_mhz": 126.2
+        }
+      ],
+      "phones": {
+        "management": "054-265-5500",
+        "weather": "054-265-5500"
+      },
+      "operation_hours": "0700-1900（日没）",
+      "fuel": [
+        "JET A-1",
+        "AVGAS 100"
+      ]
+    },
+    "geometry": {
+      "type": "Point",
+      "coordinates": [138.408611, 35.023889]
+    }
+  },
+  {
+    "type": "Feature",
+    "properties": {
+      "id": "tsushi_isewan_hp",
+      "icao": "",
+      "name_ja": "津市伊勢湾ヘリポート",
+      "kind": "heliport",
+      "elevation_ft": 21,
+      "usage": "public",
+      "frequencies": [
+        {
+          "service": "FS",
+          "name": "Isewan Local",
+          "call_sign": "Isewan Local",
+          "mhz": 122.6
+        }
+      ],
+      "phone_ops": "059-235-1665",
+      "phone_met": "059-228-2022",
+      "hours": "0700-1900",
+      "fuel": [
+        "JET A-1"
+      ]
+    },
+    "geometry": {
+      "type": "Point",
+      "coordinates": [
+        136.555833,
+        34.672778
+      ]
+    }
+  },{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [136.555833, 34.672778]
+  },
+  "properties": {
+    "icao": null,
+    "name_ja": "津市伊勢湾ヘリポート",
+    "airport_type": "heliport",
+    "elevation_ft": 20.7,
+    "usage": "public",
+    "frequencies": [
+      {
+        "service": "Isewan Local",
+        "type": "OTHER",
+        "callsign": "Isewan Local",
+        "frequency_mhz": 122.6
+      }
+    ],
+    "phones": {
+      "admin": "059-235-1665",
+      "weather": "059-228-2022"
+    },
+    "operation_hours": "0700-1900",
+    "fuel": ["JET A-1"]
+  }
+},
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [135.884722, 34.656389]
+  },
+  "properties": {
+    "icao": null,
+    "name_ja": "奈良県ヘリポート",
+    "airport_type": "heliport",
+    "elevation_ft": 1487.9,
+    "usage": "public",
+    "frequencies": [],
+    "phones": {
+      "admin": "0742-81-0501",
+      "weather": "0742-81-0501"
+    },
+    "operation_hours": "0700-2000",
+    "fuel": ["JET A-1"]
+  }
+},
+
+
+
+
+
+
+
+
+
+  ]
+}
