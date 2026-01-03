@@ -49,11 +49,13 @@ def api_metar():
     }
 
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=8)
+        # 修正: タイムアウトを 8秒 -> 30秒 に延長
+        r = requests.get(url, headers=headers, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
         return jsonify(data)
     except requests.RequestException as e:
+        # 502 Bad Gateway を返すことで、フロント側は取得失敗を知る
         return jsonify({"error": f"AVWX request failed: {e}"}), 502
 
 
@@ -61,7 +63,7 @@ def api_metar():
 def alt_ft_to_level(alt_ft: float) -> str:
     """
     入力された巡航高度(ft) に最も近い等圧面をざっくり対応させる。
-    必要であればあとでテーブルを調整すればOK。
+    Open-Meteo GFS で確実に取れる標準気圧面 (1000, 925, 850...) に合わせる。
     """
     if alt_ft is None:
         alt_ft = 3000.0
@@ -70,24 +72,24 @@ def alt_ft_to_level(alt_ft: float) -> str:
     except ValueError:
         alt_ft = 3000.0
 
+    # 修正: 950hPa は欠損の可能性があるため、925hPa を優先する構成に変更
     table = [
-        (1500, "975hPa"),
-        (3000, "950hPa"),
-        (4500, "925hPa"),
-        (6500, "900hPa"),
-        (8500, "850hPa"),
-        (10500, "800hPa"),
-        (13500, "700hPa"),
-        (17500, "600hPa"),
-        (24500, "500hPa"),
-        (32500, "400hPa"),
-        (39000, "300hPa"),
-        (45000, "250hPa"),
+        (1500,  "975hPa"), # 地表付近
+        (3500,  "925hPa"), # 3000ft付近 (以前は950だったが925に変更)
+        (6000,  "850hPa"), # 5000-6000ft
+        (10000, "700hPa"), # 9000-10000ft
+        (14000, "600hPa"),
+        (18000, "500hPa"), # FL180
+        (24000, "400hPa"),
+        (30000, "300hPa"), # FL300
+        (34000, "250hPa"),
+        (39000, "200hPa"),
+        (45000, "150hPa"),
     ]
     for limit_ft, level in table:
         if alt_ft <= limit_ft:
             return level
-    return "200hPa"
+    return "100hPa"
 
 
 # ====== GFS（Open-Meteo）風向風速 API ======
@@ -100,13 +102,9 @@ def api_gfs_wind():
         "alt_ft": 3000,
         "points": [
           {"id": 0, "lat": 35.6, "lon": 139.8},
-          {"id": 1, "lat": 38.0, "lon": 140.9},
           ...
         ]
       }
-
-    各ポイントに対して、その地点＋指定高度に最も近い等圧面の
-    風向・風速(kn) を返す。
     """
     payload = request.get_json(silent=True) or {}
     points = payload.get("points") or []
@@ -127,7 +125,6 @@ def api_gfs_wind():
             lats.append(str(float(p["lat"])))
             lons.append(str(float(p["lon"])))
         except Exception:
-            # 無効な座標はスキップ
             continue
 
     if not lats or not lons or len(lats) != len(lons):
@@ -137,14 +134,15 @@ def api_gfs_wind():
         "latitude": ",".join(lats),
         "longitude": ",".join(lons),
         "hourly": f"{var_speed},{var_dir}",
-        "windspeed_unit": "kn",  # ノットで返してもらう
-        "models": "ncep_gfs013",  # GFS を明示
+        "windspeed_unit": "kn",  # ノット
+        "models": "gfs_seamless",  # 修正: ncep_gfs013 -> gfs_seamless (より安定)
         "forecast_days": 1,
         "timezone": "UTC",
     }
 
     try:
-        r = requests.get(OPEN_METEO_URL, params=params, timeout=8)
+        # 修正: タイムアウトを 8秒 -> 30秒 に延長
+        r = requests.get(OPEN_METEO_URL, params=params, timeout=30)
         r.raise_for_status()
         js = r.json()
     except requests.RequestException as e:
@@ -161,10 +159,13 @@ def api_gfs_wind():
         hourly = (loc or {}).get("hourly") or {}
         spd_arr = hourly.get(var_speed) or []
         dir_arr = hourly.get(var_dir) or []
+        
+        # 配列が空、またはデータがない場合はスキップ
         if not spd_arr or not dir_arr:
             continue
 
         try:
+            # 0番目（現在時刻または開始時刻）を取得
             spd = float(spd_arr[0])
             direc = float(dir_arr[0])
         except Exception:
