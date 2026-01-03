@@ -1,5 +1,4 @@
-// static/js/map-core.js
-console.log("[MAP] init map-core.js (Gray Airspace Style)");
+console.log("[MAP] init map-core.js (Latest Fixed Version)");
 
 (function () {
   // ====== 地図セットアップ ======
@@ -83,7 +82,7 @@ console.log("[MAP] init map-core.js (Gray Airspace Style)");
     const fitGroup = L.featureGroup();
 
     // --- 1. 空域（ASP） ---
-    // ★グレーの点線スタイルを適用
+    // グレーの点線スタイルを適用
     const asp = await addGeoJsonOverlay(PATH_ASP, {
       style: styleAirspace,
       onEachFeature: (f, layer) => {
