@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -170,14 +170,12 @@
     <div id="sidebar">
       <div id="inputTab">
 
-        <!-- ====== モード切替UI ====== -->
         <div class="mode-switch">
           <button id="mode-text" class="active" onclick="window.setRouteMode('text')">地名入力</button>
           <button id="mode-pick" onclick="window.setRouteMode('pick')">地図クリック</button>
         </div>
         <div class="mode-hint" id="modeHint">現在：地名入力モード</div>
 
-        <!-- ====== 地名入力モード ====== -->
         <div id="text-route-panel">
           <div class="input-group">
             <label>出発地:</label>
@@ -193,7 +191,6 @@
           </div>
         </div>
 
-        <!-- ====== 地図クリックモード ====== -->
         <div id="pick-route-panel" style="display:none;">
           <div class="input-group">
             <label>地点をクリックして順番登録</label>
@@ -210,7 +207,6 @@
           </div>
         </div>
 
-        <!-- ====== 共通パラメータ ====== -->
         <hr style="margin:10px 0;">
         <div class="input-group">
           <label>真対気速度（TAS, kt）：</label>
@@ -249,12 +245,10 @@
         <div id="results"></div>
       </div>
 
-      <!-- 出典・ライセンスへのリンク -->
       <div id="credits-link">
         <a href="{{ url_for('credits') }}" target="_blank" rel="noopener noreferrer">出典・ライセンス</a>
       </div>
 
-      <!-- ★実行→リセット固定バー -->
       <div id="actionBar">
         <button id="plot-button-bar" onclick="window.plotRoute()">実行（地名入力）</button>
         <button id="pick-run-bar" onclick="window.plotRouteFromPicked()" disabled style="display:none;">実行（クリック選択）</button>
@@ -266,10 +260,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="{{ url_for('static', filename='js/map-core.js') }}"></script>
   <script src="{{ url_for('static', filename='js/weather-imc.js') }}"></script>
-  <!-- GFS 風向風速用 -->
   <script src="{{ url_for('static', filename='js/gfs-wind.js') }}"></script>
   <script src="{{ url_for('static', filename='js/navlog.js') }}"></script>
   <script src="{{ url_for('static', filename='js/ui-main.js') }}"></script>
+  
+  <script src="/static/js/camera-layer.js"></script>
 </body>
 </html>
-<script src="/static/js/camera-layer.js"></script>
