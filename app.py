@@ -141,8 +141,7 @@ def api_gfs_wind():
     }
 
     try:
-        # 修正: タイムアウトを 8秒 -> 30秒 に延長
-        r = requests.get(OPEN_METEO_URL, params=params, timeout=30)
+        r = requests.get(OPEN_METEO_URL, params=params, timeout=8)
         r.raise_for_status()
         js = r.json()
     except requests.RequestException as e:

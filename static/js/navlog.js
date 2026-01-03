@@ -165,15 +165,16 @@ console.log("[NAVLOG] init navlog.js");
 
   // ====== GFS から中心1点だけ風を取得し、全レグに適用 ======
   async function fetchLegWinds(legs, altFt, allPoints) {
-    const uiDir = parseFloat(
-      document.getElementById("windDir")?.value
-    );
-    const uiSpd = parseFloat(
-      document.getElementById("windSpd")?.value
-    );
+    const uiDirEl = document.getElementById("windDir");
+    const uiSpdEl = document.getElementById("windSpd");
+
+    // 修正: ?. を使わず安全に値を取得
+    const uiDir = uiDirEl ? parseFloat(uiDirEl.value) : NaN;
+    const uiSpd = uiSpdEl ? parseFloat(uiSpdEl.value) : NaN;
 
     // フォールバック：UI に入力された風を全レグに適用
     const fallbackAll = () => {
+      console.log("[NAVLOG] using UI winds (fallback)");
       const out = {};
       if (Number.isFinite(uiDir) && Number.isFinite(uiSpd)) {
         legs.forEach((_, i) => {
@@ -211,7 +212,6 @@ console.log("[NAVLOG] init navlog.js");
         });
       }
 
-      // 念のため、allPoints が空だった場合はレグ中点から取る
       if (count === 0 && Array.isArray(legs) && legs.length > 0) {
         legs.forEach((leg) => {
           const m = leg.mid;
@@ -237,7 +237,9 @@ console.log("[NAVLOG] init navlog.js");
       const centerLat = sumLat / count;
       const centerLon = sumLon / count;
 
-      // ★ここで 1 回だけ /api/gfs_wind を叩いて、中心1点の風を取得
+      console.log(`[NAVLOG] Fetching GFS for center: ${centerLat.toFixed(2)}, ${centerLon.toFixed(2)} alt=${altFt}`);
+      
+      // ★ここで API をコール
       const gfs = await window.fetchGfsWindAt(
         centerLat,
         centerLon,
@@ -246,13 +248,20 @@ console.log("[NAVLOG] init navlog.js");
 
       const out = {};
       if (gfs && Number.isFinite(gfs.dir) && Number.isFinite(gfs.spd)) {
+        console.log(`[NAVLOG] GFS Success: ${gfs.dir}/${gfs.spd}`);
+        
+        // ★UIに反映
+        if (uiDirEl && uiSpdEl) {
+          uiDirEl.value = Math.round(gfs.dir);
+          uiSpdEl.value = Math.round(gfs.spd);
+        }
+
         legs.forEach((_, i) => {
           out[i] = { dir: gfs.dir, spd: gfs.spd };
         });
         return out;
       }
 
-      // GFS が取れなければ UI フォールバック
       return fallbackAll();
     } catch (e) {
       console.warn(
@@ -265,34 +274,36 @@ console.log("[NAVLOG] init navlog.js");
 
   // ====== NAVLOG 表示メイン ======
   async function showNavLog(points, TAS) {
-    const windDirUI = parseFloat(
-      document.getElementById("windDir").value
-    );
-    const windSpdUI = parseFloat(
-      document.getElementById("windSpd").value
-    );
-    const DEV = parseFloat(
-      document.getElementById("dev").value || "0"
-    );
-    const burnPH = Math.max(
-      0,
-      parseFloat(document.getElementById("burnPerHour").value) || 0
-    );
-    let fuelRemain = Math.max(
-      0,
-      parseFloat(document.getElementById("startFuel").value) || 0
-    );
+    console.log("[NAVLOG] showNavLog called", points.length, TAS);
+    
+    // UI取得
+    const windDirEl = document.getElementById("windDir");
+    const windSpdEl = document.getElementById("windSpd");
+    
+    // 修正: ?. を使わず安全に
+    const windDirUI = windDirEl ? parseFloat(windDirEl.value) : NaN;
+    const windSpdUI = windSpdEl ? parseFloat(windSpdEl.value) : NaN;
 
-    const etdStr = (document.getElementById("etd").value || "").trim();
+    const devEl = document.getElementById("dev");
+    const DEV = parseFloat((devEl ? devEl.value : "0") || "0");
+
+    const burnEl = document.getElementById("burnPerHour");
+    const burnPH = Math.max(0, parseFloat((burnEl ? burnEl.value : "0") || "0"));
+
+    const fuelEl = document.getElementById("startFuel");
+    let fuelRemain = Math.max(0, parseFloat((fuelEl ? fuelEl.value : "100") || "100"));
+
+    const etdEl = document.getElementById("etd");
+    const etdStr = (etdEl ? etdEl.value : "").trim();
+
+    const altEl = document.getElementById("alt");
+    const altFt = parseFloat((altEl ? altEl.value : "3000") || "3000");
+
     let baseMin = null;
     if (/^\d{1,2}:\d{2}$/.test(etdStr)) {
       const [h, m] = etdStr.split(":").map(Number);
       baseMin = h * 60 + m;
     }
-
-    const altFt = parseFloat(
-      document.getElementById("alt").value || "3000"
-    );
 
     // まずレグの基本情報（距離 / TC / VAR / 中点）を作る
     const legs = [];
@@ -306,7 +317,8 @@ console.log("[NAVLOG] init navlog.js");
       let VAR = 0;
       try {
         VAR = await getVariation(mid[0], mid[1]);
-      } catch (_) {
+      } catch (e) {
+        console.warn("[NAVLOG] getVariation failed", e);
         VAR = 0;
       }
 
@@ -323,26 +335,28 @@ console.log("[NAVLOG] init navlog.js");
       });
     }
 
-    // レグごとの風向風速を「中心1点の GFS」で決定（失敗時は UI 値フォールバック）
+    // レグごとの風向風速
+    console.log("[NAVLOG] Fetching winds...");
     const legWinds = await fetchLegWinds(legs, altFt, points);
+    console.log("[NAVLOG] Winds fetched");
 
-    // ここから WCA, GS, TH, MH, CH 等を計算
+    // 計算
     const computedLegs = [];
     for (let i = 0; i < legs.length; i++) {
       const base = legs[i];
       const wind = legWinds[i] || {};
+      
       const wDir =
         Number.isFinite(wind.dir) && Number.isFinite(wind.spd)
           ? wind.dir
-          : Number.isFinite(windDirUI) &&
-            Number.isFinite(windSpdUI)
+          : Number.isFinite(windDirUI) && Number.isFinite(windSpdUI)
           ? windDirUI
           : null;
+          
       const wSpd =
         Number.isFinite(wind.dir) && Number.isFinite(wind.spd)
           ? wind.spd
-          : Number.isFinite(windDirUI) &&
-            Number.isFinite(windSpdUI)
+          : Number.isFinite(windDirUI) && Number.isFinite(windSpdUI)
           ? windSpdUI
           : null;
 
@@ -542,7 +556,16 @@ console.log("[NAVLOG] init navlog.js");
     }
 
     html += `</div></div>`;
-    document.getElementById("results").innerHTML = html;
+    
+    // HTML挿入
+    const resultsDiv = document.getElementById("results");
+    if(resultsDiv) {
+        resultsDiv.innerHTML = html;
+        console.log("[NAVLOG] HTML inserted into #results");
+    } else {
+        console.error("[NAVLOG] #results div not found!");
+    }
+    
     setTimeout(fitNavGrid, 0);
   }
 
