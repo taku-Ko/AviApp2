@@ -122,8 +122,8 @@ console.log("[IMC] init weather-imc.js (Grid Paint Restored)");
         }
       }
 
-      // 60NM以上離れていたら塗らない（データなし）
-      if (!best || bestNM > 60) continue;
+      // 30NM以上離れていたら塗らない（データなし）
+      if (!best || bestNM > 30) continue;
 
       // METAR判定
       const metar = metarMap.get(best.icao);
