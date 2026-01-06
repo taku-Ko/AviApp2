@@ -1,169 +1,198 @@
-console.log("[IMC] init weather-imc.js (Grid Paint Restored)");
+console.log("[IMC] init weather-imc.js (Cache Busting Fix)");
 
 (function () {
-  // マップオブジェクトの取得（読み込み順によってはまだない可能性があるため、チェックは行うが即returnはしない）
   let map = window.navMap;
-  let layersCtl = window.navLayersControl; // 変数名をmap-core.jsと合わせる
-
-  // レイヤーグループ作成（マップがあれば即追加、なければ後で追加）
   const imcLayerGroup = L.featureGroup();
-  if (map) {
-    imcLayerGroup.addTo(map);
-    if (layersCtl) {
-      layersCtl.addOverlay(imcLayerGroup, "IMC/MVFRメッシュ");
-    }
-  }
-
-  // ====== AVWX METAR 取得関数 ======
-  async function fetchMetar(icao) {
-    const clean = String(icao || "").trim().toUpperCase();
-    if (!clean) throw new Error("icao empty");
-
-    // サーバー経由でAVWX APIを叩く想定
-    const url = `/api/metar?icao=${encodeURIComponent(clean)}`;
-    const r = await fetch(url, { headers: { Accept: "application/json" } });
+  
+  // 地図レイヤーの準備待機と追加
+  function addLayerToMap() {
+    // map-core.js で定義された navMap と navLayersControl を探す
+    if (!map && window.navMap) map = window.navMap;
     
-    if (!r.ok) {
-      // エラー時はnullを返すなどして処理を止めない
-      return null;
+    if (map) {
+      imcLayerGroup.addTo(map);
+      if(window.navLayersControl) {
+        window.navLayersControl.addOverlay(imcLayerGroup, "IMC/MVFRメッシュ");
+      }
+    } else {
+      // まだ地図がない場合は少し待って再試行
+      setTimeout(addLayerToMap, 500);
     }
-    return await r.json();
   }
+  addLayerToMap();
 
-  // map-core.js等から利用できるように公開
+  // ====== AVWX METAR 取得関数 (キャッシュ対策済み) ======
+  async function fetchMetar(icao) {
+    const clean = String(icao).trim().toUpperCase();
+    if (!clean) return null;
+    try {
+      // ★修正: URL末尾に現在時刻(Date.now())を付与して、ブラウザのキャッシュを回避
+      const url = `/api/metar?icao=${encodeURIComponent(clean)}&_=${Date.now()}`;
+      
+      // ★修正: cache: "no-store" で明示的にキャッシュしないよう指定
+      const res = await fetch(url, { cache: "no-store" });
+      
+      if (!res.ok) return null;
+      return await res.json();
+    } catch(e) { 
+      // console.warn(`[IMC] Fetch fail: ${icao}`, e);
+      return null; 
+    }
+  }
+  // 他のスクリプトからも呼べるように公開
   window.avwxFetchMetar = fetchMetar;
 
   // ====== 10NM グリッド生成（日本全域） ======
-  function buildJapanCells10nm() {
-    const cells = [];
-    const south = 24.0, north = 46.5;
-    const west = 122.5, east = 146.5;
-    const latStep = 10 / 60; // 10NM approx 0.166 deg
-
-    for (let lat = south; lat < north; lat += latStep) {
-      // 緯度に応じた経度方向の10NMステップ補正
-      const lonStep = 10 / (60 * Math.max(0.0001, Math.cos((lat * Math.PI) / 180)));
-      for (let lon = west; lon < east; lon += lonStep) {
-        cells.push({
-          lat1: lat,
-          lat2: lat + latStep,
-          lon1: lon,
-          lon2: lon + lonStep,
-          center: [lat + latStep / 2, lon + lonStep / 2],
+  const japanCells = [];
+  (function buildGrid(){
+    const south=24.0, north=46.5, west=122.5, east=146.5;
+    const latStep=10/60; // 10NM
+    for(let lat=south; lat<north; lat+=latStep){
+      // 経度は緯度によって幅が変わるため補正
+      const lonStep = 10 / (60 * Math.max(0.0001, Math.cos(lat*Math.PI/180)));
+      for(let lon=west; lon<east; lon+=lonStep){
+        japanCells.push({
+          lat1:lat, lat2:lat+latStep, lon1:lon, lon2:lon+lonStep,
+          center:[lat+latStep/2, lon+lonStep/2]
         });
       }
     }
-    // console.log("[IMC] japan cells built:", cells.length);
-    return cells;
-  }
-
-  const japanCells = buildJapanCells10nm();
+  })();
 
   // ====== 距離計算 (Haversine) ======
   function haversineNM(aLat, aLon, bLat, bLon) {
     const R = 6371; 
-    const rad = (x) => (x * Math.PI) / 180;
-    const dLat = rad(bLat - aLat);
-    const dLon = rad(bLon - aLon);
-    const a = Math.sin(dLat / 2) ** 2 +
-              Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c) / 1.852; // km -> nm
+    const dLat = (bLat-aLat)*Math.PI/180;
+    const dLon = (bLon-aLon)*Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(aLat*Math.PI/180)*Math.cos(bLat*Math.PI/180)*Math.sin(dLon/2)**2;
+    // km -> nm
+    return (2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) / 1.852;
   }
 
-  // ====== メイン処理: メッシュ更新 ======
-  // map-core.js から空港リスト(stations)を受け取って実行される
+  // ====== データ鮮度チェック ======
+  // 90分以上前のデータは「古い」とみなして表示しない
+  function isDataFresh(m) {
+    if(!m || !m.time || !m.time.dt) return false;
+    
+    const obs = new Date(m.time.dt);
+    const now = new Date();
+    // 差分（分）
+    const diff = (now - obs) / 60000; 
+    
+    // 未来の日付(時計ズレ -10分まで許容) や 90分経過したものは false
+    if (diff < -10 || diff > 90) return false; 
+    
+    return true; 
+  }
+
+  // map-core.js から渡される空港リスト
   let airportStations = [];
 
+  // ====== メイン更新処理 ======
   async function updateImcLayerFromMetar() {
     if (!airportStations.length) return;
-    
-    // マップオブジェクトの再取得（初期化時に無かった場合のため）
-    if (!map && window.navMap) {
-      map = window.navMap;
-      imcLayerGroup.addTo(map);
-      if (window.navLayersControl) {
-        window.navLayersControl.addOverlay(imcLayerGroup, "IMC/MVFRメッシュ");
-      }
-    }
-    if (!map) return; // まだマップがない場合は次回の更新で
+    console.log("[IMC] Updating METAR Mesh & Markers...");
 
-    console.log("[IMC] Updating METAR Mesh...");
-
-    // 1. 全空港のMETAR取得
     const metarMap = new Map();
-    // 並列取得（負荷軽減のため適宜調整してください）
+    // 並列取得（負荷軽減のため適宜調整）
     await Promise.allSettled(
       airportStations.map(async (s) => {
-        try {
-          const m = await fetchMetar(s.icao);
-          if (m) metarMap.set(s.icao, m);
-        } catch (e) { /* ignore */ }
+        const m = await fetchMetar(s.icao);
+        if (m) metarMap.set(s.icao, m);
       })
     );
 
-    const usableStations = airportStations.filter((s) => metarMap.has(s.icao));
+    // 1. マーカーの色更新 (map-core.js のレイヤーを操作)
+    if (window.layerAirports) updateMarkers(window.layerAirports, metarMap);
+    if (window.layerHeliports) updateMarkers(window.layerHeliports, metarMap);
+
+    // 2. グリッド(メッシュ)更新
     imcLayerGroup.clearLayers();
-
-    // 2. メッシュごとに最近傍空港を探して色分け
-    let painted = 0;
+    const usableStations = airportStations.filter(s => metarMap.has(s.icao));
+    
+    let count = 0;
     for (const c of japanCells) {
-      const [clat, clon] = c.center;
-
-      // 最近傍探索
-      let best = null;
-      let bestNM = 9999;
-
-      for (const st of usableStations) {
-        const d = haversineNM(clat, clon, st.lat, st.lon);
-        if (d < bestNM) {
-          bestNM = d;
-          best = st;
-        }
+      // グリッド中心から最も近い空港を探す
+      let best = null, bestNM = 9999;
+      for (const s of usableStations) {
+        const d = haversineNM(c.center[0], c.center[1], s.lat, s.lon);
+        if (d < bestNM) { bestNM = d; best = s; }
       }
 
-      // 30NM以上離れていたら塗らない（データなし）
+      // 参照距離: 30NM以内 (以前のご指定)
       if (!best || bestNM > 30) continue;
 
-      // METAR判定
-      const metar = metarMap.get(best.icao);
-      const fr = (metar?.flight_rules || "").toUpperCase();
+      const m = metarMap.get(best.icao);
+      
+      // 鮮度チェック: 古いデータなら塗らない
+      if (!isDataFresh(m)) continue; 
 
-      let fill = null;
-      if (fr === "IFR" || fr === "LIFR") {
-        fill = "#ff0000"; // 赤 (IMC)
-      } else if (fr === "MVFR") {
-        fill = "#fb8c00"; // オレンジ (Marginal VFR)
-      } 
-      // VFRは fill = null (塗らない)
-
-      // 描画
-      if (fill) {
-        L.rectangle(
-          [[c.lat1, c.lon1], [c.lat2, c.lon2]],
-          {
-            color: "transparent", // 枠線なし
-            weight: 0,
-            fillColor: fill,
-            fillOpacity: 0.35,
-            interactive: false // クリック判定等は不要
-          }
-        ).addTo(imcLayerGroup);
-        painted++;
+      const fr = (m.flight_rules || "").toUpperCase();
+      let color = null;
+      // IFR/LIFR=赤, MVFR=青 (VFRは塗らない)
+      if (fr === "IFR" || fr === "LIFR") color = "#c62828"; 
+      else if (fr === "MVFR") color = "#1565c0"; 
+      
+      if (color) {
+        L.rectangle([[c.lat1,c.lon1],[c.lat2,c.lon2]], {
+          color: "transparent", // 枠線なし
+          fillColor: color, 
+          fillOpacity: 0.35, 
+          interactive: false
+        }).addTo(imcLayerGroup);
+        count++;
       }
     }
-    console.log(`[IMC] Mesh Updated: ${painted} cells painted.`);
+    console.log(`[IMC] Mesh Updated: Painted ${count} cells.`);
+  }
+
+  // マーカー(空港ピン)の色を更新する関数
+  function updateMarkers(layerGroup, metarMap) {
+    layerGroup.eachLayer(l => {
+      const p = l.feature.properties;
+      const icao = p.icao || p.ident;
+      if (!icao) return;
+
+      const m = metarMap.get(icao);
+      if (m) {
+        // ポップアップ用にデータを保存
+        l.metarData = { rule: m.flight_rules, raw: m.raw, time: m.time?.dt };
+        
+        // 鮮度チェック: 古いデータなら白(デフォルト)に戻す
+        if (!isDataFresh(m)) {
+           l.setStyle({ fillColor: "#ffffff", color:"#555", weight: 1.5 });
+           return;
+        }
+
+        const fr = m.flight_rules;
+        let c = "#ffffff";
+        let w = 1.5;
+        let border = "#555";
+
+        if (fr === "IFR" || fr === "LIFR") {
+          c = "#c62828"; // 赤
+          w = 2; 
+          border = "#333";
+        } else if (fr === "MVFR") {
+          c = "#1565c0"; // 青
+          w = 2;
+          border = "#333";
+        }
+        
+        l.setStyle({ fillColor: c, color: border, weight: w });
+      }
+    });
   }
 
   // ====== 外部公開インターフェース ======
-  // map-core.js で空港データを読み込んだ後にこれを呼んでもらう
+  // map-core.js から呼ばれる
   window.setAirportStationsForImc = function (stations) {
     airportStations = stations || [];
     // 初回実行
     updateImcLayerFromMetar();
     
     // 定期更新タイマー (10分ごと)
-    if (window.imcTimer) clearInterval(window.imcTimer);
+    if(window.imcTimer) clearInterval(window.imcTimer);
     window.imcTimer = setInterval(updateImcLayerFromMetar, 10 * 60 * 1000);
   };
 
