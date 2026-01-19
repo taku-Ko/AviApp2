@@ -4,163 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>航法計画作成支援システム</title>
+  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    /* ====== Layout ====== */
-    html, body { height: 100%; margin: 0; }
-    #container { display: flex; height: 100vh; width: 100vw; transition: all .2s ease; }
-    #map { flex: 7; height: 100%; transition: all .2s ease; }
-    #sidebar {
-      flex: 3;
-      display: flex; flex-direction: column;
-      background: #f9f9f9; padding: 10px; box-sizing: border-box;
-      font-size: 14px; position: relative; overflow: auto; height: 100%;
-      transition: all .2s ease;
-    }
-
-    .input-group { margin-bottom: 10px; }
-    .input-group label { display: block; margin-bottom: 4px; }
-    .input-group input { width: 100%; padding: 6px; box-sizing: border-box; }
-
-    /* ====== NAVLOG GRID ====== */
-    .navgrid{
-      display: grid;
-      grid-template-columns:
-        200px 84px 84px 84px 84px 64px 64px 72px 64px 72px 72px;
-      --halfrow: 26px;
-      grid-auto-rows: var(--halfrow);
-      background:#fff;
-      border: 1px solid #333; 
-      box-sizing: border-box;
-    }
-    .cell{
-      display:flex; align-items:center; justify-content:center;
-      padding:4px 6px;
-      font: 13px/1.1 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans JP", sans-serif;
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-      border-right:1px solid #333; border-bottom:1px solid #333;
-      background:#fff;
-    }
-    .left{ border-left:1px solid #333; }
-    .top { border-top: 1px solid #333; }
-
-    .head{ background:#eee; font-weight:600; }
-    .sub { font-size:12px; }
-    .cp  { font-weight:600; text-align:center; }
-
-    .stack{ display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.05; width:100%; }
-    .stack .top-num{ font-weight:600; font-size:13px; }
-    .stack .bottom-num{ font-size:12px; }
-    .stack .sep{ height:1px; width:100%; background:#bbb; margin:3px 0; }
-
-    .editable[contenteditable="true"] { background: #fffdfa; outline: none; }
-    .editable[contenteditable="true"]:focus { box-shadow: inset 0 0 0 2px #ffd54f; }
-
-    .var-east { color: #1e88e5; font-weight: 600; }
-    .var-west { color: #d32f2f; font-weight: 600; }
-    .var-zero { color: #333;    font-weight: 600; }
-
-    .results-layout #map { flex: 2 !important; }
-    .results-layout #sidebar { flex: 8 !important; }
-
-    .navgrid-wrap { position: relative; transform-origin: top left; display: inline-block; }
-
-    #results {
-      overflow-x: auto;
-      overflow-y: auto;
-      width: 100%;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    .thick-top { border-top: 2px solid #000 !important; }
-    .cp-merge-line{
-      --cp-gap: 140px; 
-      background-image: linear-gradient(to right,
-        #000 0,
-        #000 calc(50% - var(--cp-gap)),
-        transparent calc(50% - var(--cp-gap)),
-        transparent calc(50% + var(--cp-gap)),
-        #000 calc(50% + var(--cp-gap)),
-        #000 100%
-      );
-      background-repeat: no-repeat;
-      background-size: 100% 2px;
-      background-position: 0 var(--halfrow);
-    }
-
-    /* ====== Map Tab Control ====== */
-    .tab-control.leaflet-control {
-      background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); border-radius: 6px; overflow: hidden;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Noto Sans JP', sans-serif;
-    }
-    .tab-control .btn {
-      display: inline-block; padding: 6px 10px; border: none; background: #fff;
-      cursor: pointer; font-size: 13px; line-height: 1.2;
-    }
-    .tab-control .btn + .btn { border-left: 1px solid #ddd; }
-    .tab-control .btn.active { background: #2e7d32; color: #fff; }
-
-    /* ====== Route Mode Switch ====== */
-    .mode-switch {
-      display:flex; gap:6px; margin-bottom:8px;
-    }
-    .mode-switch button{
-      flex:1; padding:8px; border:1px solid #000; background:#fff; cursor:pointer;
-      font-size:14px;
-    }
-    .mode-switch button.active{
-      background:#2e7d32; color:#fff; border-color:#2e7d32;
-    }
-    .mode-hint{ font-size:12px; color:#333; margin-bottom:8px; }
-
-    /* ====== Pick List ====== */
-    #pickedList{ font-size:13px; background:#fff; border:1px solid #ccc; padding:6px; }
-    #pickedList .row{ display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px dashed #ddd; }
-    #pickedList .row:last-child{ border-bottom:none; }
-    #pickedList .tag{ font-weight:600; }
-
-    /* ====== Sticky Action Bar (実行→リセット) ====== */
-    #actionBar{
-      position: sticky;
-      bottom: 0;
-      background: #f9f9f9;
-      padding-top: 8px;
-      margin-top: 8px;
-      border-top: 1px solid #ccc;
-      z-index: 999;
-    }
-    #plot-button-bar, #pick-run-bar, #reset-button{
-      padding: 8px;
-      background: #fff !important;
-      color: #000 !important;
-      border: 1px solid #000 !important;
-      cursor: pointer;
-      width: 100%;
-      display: block;
-      font-size: 14px;
-      box-shadow: none;
-      margin-top: 6px;
-    }
-    #plot-button-bar:disabled, #pick-run-bar:disabled{
-      opacity: .6;
-    }
-
-    /* ====== Credits link ====== */
-    #credits-link {
-      font-size: 11px;
-      color: #555;
-      margin-top: 8px;
-      text-align: right;
-    }
-    #credits-link a {
-      color: #1976d2;
-      text-decoration: none;
-    }
-    #credits-link a:hover {
-      text-decoration: underline;
-    }
-  </style>
+  
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}" />
 </head>
 
 <body>
@@ -168,8 +15,8 @@
     <div id="map"></div>
 
     <div id="sidebar">
+      
       <div id="inputTab">
-
         <div class="mode-switch">
           <button id="mode-text" class="active" onclick="window.setRouteMode('text')">地名入力</button>
           <button id="mode-pick" onclick="window.setRouteMode('pick')">地図クリック</button>
@@ -181,11 +28,9 @@
             <label>出発地:</label>
             <input type="text" id="start" placeholder="例：新千歳空港">
           </div>
-
           <div id="waypoints"></div>
-          <button onclick="window.addWaypoint()">経由地を追加</button>
-
-          <div class="input-group" style="margin-top:10px;">
+          <button onclick="window.addWaypoint()" style="width:100%; padding:6px; margin-bottom:10px;">＋ 経由地を追加</button>
+          <div class="input-group">
             <label>目的地:</label>
             <input type="text" id="end" placeholder="例：羽田空港">
           </div>
@@ -193,71 +38,74 @@
 
         <div id="pick-route-panel" style="display:none;">
           <div class="input-group">
-            <label>地点をクリックして順番登録</label>
-            <div style="font-size:12px; color:#555;">
-              1点目＝出発地、途中＝経由地、最後＝目的地として計算します。
-            </div>
+            <label>地図をクリックして地点を登録</label>
           </div>
-
           <div id="pickedList"></div>
-
           <div style="display:flex; gap:6px; margin-top:6px;">
-            <button style="flex:1; padding:6px; border:1px solid #000; background:#fff; cursor:pointer;" onclick="window.undoPick()">一つ戻す</button>
-            <button style="flex:1; padding:6px; border:1px solid #000; background:#fff; cursor:pointer;" onclick="window.clearPick()">全消去</button>
+            <button onclick="window.undoPick()" style="flex:1; padding:6px;">一つ戻す</button>
+            <button onclick="window.clearPick()" style="flex:1; padding:6px;">全消去</button>
           </div>
         </div>
 
-        <hr style="margin:10px 0;">
+        <hr style="margin:20px 0; border:0; border-top:1px solid #ccc;">
+        
         <div class="input-group">
-          <label>真対気速度（TAS, kt）：</label>
-          <input type="number" id="tas" value="120" min="10" step="1">
+          <label>真対気速度 (TAS, kt)：</label>
+          <input type="number" id="tas" value="120" min="10">
         </div>
         <div class="input-group">
-          <label>巡航高度（ft）：</label>
+          <label>巡航高度 (ft)：</label>
           <input type="number" id="alt" value="3000" min="0" step="500">
         </div>
         <div class="input-group">
-          <label>ETD（HH:MM）：</label>
-          <input type="time" id="etd" value="">
+          <label>出発予定時刻 (ETD)：</label>
+          <input type="time" id="etd">
         </div>
         <div class="input-group">
-          <label>風向（°/3桁）・風速（kt）：</label>
+          <label>風向 / 風速(kt)：</label>
           <div style="display:flex; gap:8px;">
-            <input type="number" id="windDir" placeholder="例：360" min="0" max="359" style="width:100%;">
-            <input type="number" id="windSpd" placeholder="例：10" min="0" step="1" style="width:100%;">
+            <input type="number" id="windDir" placeholder="Deg" min="0" max="359">
+            <input type="number" id="windSpd" placeholder="Kt" min="0">
           </div>
+          <div style="font-size:11px; color:#666;">※空白時はGFS風予報を自動取得</div>
         </div>
         <div class="input-group">
-          <label>DEV（自差、 °）：</label>
+          <label>自差 (DEV)：</label>
           <input type="number" id="dev" value="0" step="0.1">
         </div>
         <div class="input-group">
-          <label>燃料消費量（任意単位/時）：</label>
-          <input type="number" id="burnPerHour" value="30" step="0.1" min="0">
+          <label>燃料消費率 (gal/h)：</label>
+          <input type="number" id="burnPerHour" value="30" step="0.1">
         </div>
         <div class="input-group">
-          <label>積載燃料（任意単位）：</label>
-          <input type="number" id="startFuel" value="100" step="0.1" min="0">
+          <label>積載燃料 (gal)：</label>
+          <input type="number" id="startFuel" value="100" step="0.1">
+        </div>
+
+        <div id="actionBar">
+          <button id="plot-button-bar" onclick="window.plotRoute()">NavLog 作成（地名）</button>
+          <button id="pick-run-bar" onclick="window.plotRouteFromPicked()" disabled style="display:none;">NavLog 作成（クリック）</button>
+          <button id="reset-button" onclick="window.resetAll()">リセット</button>
+        </div>
+        
+        <div id="credits-link" style="margin-top:20px; text-align:center; font-size:12px;">
+          <a href="{{ url_for('credits') }}" target="_blank">出典・ライセンス</a>
         </div>
       </div>
 
       <div id="resultsTab" style="display:none;">
+        <div class="results-toolbar">
+          <button class="btn-back" onclick="window.showTab('input')">◀ 条件入力へ戻る</button>
+          <button class="btn-print" onclick="window.print()">🖨 印刷 / PDF</button>
+        </div>
         <div id="results"></div>
       </div>
 
-      <div id="credits-link">
-        <a href="{{ url_for('credits') }}" target="_blank" rel="noopener noreferrer">出典・ライセンス</a>
-      </div>
-
-      <div id="actionBar">
-        <button id="plot-button-bar" onclick="window.plotRoute()">実行（地名入力）</button>
-        <button id="pick-run-bar" onclick="window.plotRouteFromPicked()" disabled style="display:none;">実行（クリック選択）</button>
-        <button id="reset-button" onclick="window.resetAll()">リセット</button>
-      </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
   <script src="{{ url_for('static', filename='js/map-core.js') }}"></script>
   <script src="{{ url_for('static', filename='js/weather-imc.js') }}"></script>
   <script src="{{ url_for('static', filename='js/gfs-wind.js') }}"></script>
@@ -265,4 +113,3 @@
   <script src="{{ url_for('static', filename='js/ui-main.js') }}"></script>
 </body>
 </html>
-<script src="/static/js/camera-layer.js"></script>

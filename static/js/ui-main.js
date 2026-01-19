@@ -1,358 +1,194 @@
 // static/js/ui-main.js
-console.log("[UI] init ui-main.js");
+console.log("[UI] init ui-main.js (Full Restore)");
 
 (function () {
   const map = window.navMap;
+  if (!map) return;
 
-  if (!map) {
-    console.error("[UI] navMap が未定義です");
-    return;
-  }
-
-  // ====== タブ切替 ======
+  // タブ切り替え (Input <-> Results)
   function showTab(tab) {
-    document.getElementById("inputTab").style.display =
-      tab === "input" ? "block" : "none";
-    document.getElementById("resultsTab").style.display =
-      tab === "results" ? "block" : "none";
-    document.body.classList.toggle("results-layout", tab === "results");
-    setTimeout(() => map.invalidateSize(), 80);
-    if (tab === "results") setTimeout(window.fitNavGrid || (() => {}), 0);
+    const inputTab = document.getElementById("inputTab");
+    const resultsTab = document.getElementById("resultsTab");
+    
+    if (tab === "input") {
+      inputTab.style.display = "block";
+      resultsTab.style.display = "none";
+      document.body.classList.remove("results-layout");
+    } else {
+      inputTab.style.display = "none";
+      resultsTab.style.display = "flex"; // Flex layout for toolbar
+      document.body.classList.add("results-layout");
+      // 結果表示時にサイズ調整を実行
+      if (window.fitNavPaper) setTimeout(window.fitNavPaper, 100);
+    }
+    setTimeout(() => map.invalidateSize(), 100);
   }
   window.showTab = showTab;
 
-  // ====== ルートモード切替 ======
+  // モード切り替え (Text <-> Pick)
   let routeMode = "text";
-  function getRouteMode() {
-    return routeMode;
-  }
   function setRouteMode(mode) {
     routeMode = mode;
+    // ボタンのスタイル
+    document.getElementById("mode-text").classList.toggle("active", mode === "text");
+    document.getElementById("mode-pick").classList.toggle("active", mode === "pick");
+    
+    // パネルの表示
+    document.getElementById("text-route-panel").style.display = mode === "text" ? "block" : "none";
+    document.getElementById("pick-route-panel").style.display = mode === "pick" ? "block" : "none";
+    
+    // 実行ボタンの切り替え
+    const pb = document.getElementById("plot-button-bar");
+    const pr = document.getElementById("pick-run-bar");
+    if(pb) pb.style.display = mode === "text" ? "block" : "none";
+    if(pr) pr.style.display = mode === "pick" ? "block" : "none";
 
-    document
-      .getElementById("mode-text")
-      .classList.toggle("active", mode === "text");
-    document
-      .getElementById("mode-pick")
-      .classList.toggle("active", mode === "pick");
-
-    document.getElementById("text-route-panel").style.display =
-      mode === "text" ? "block" : "none";
-    document.getElementById("pick-route-panel").style.display =
-      mode === "pick" ? "block" : "none";
-
-    document.getElementById("modeHint").textContent =
-      mode === "text"
-        ? "現在：地名入力モード"
-        : "現在：地図クリックモード（クリックで順番登録）";
-
-    document.getElementById("plot-button-bar").style.display =
-      mode === "text" ? "block" : "none";
-    document.getElementById("pick-run-bar").style.display =
-      mode === "pick" ? "block" : "none";
+    // ヒント更新
+    const h = document.getElementById("modeHint");
+    if(h) h.innerText = mode === "text" ? "地名を入力してルート作成" : "地図をクリックして地点を追加";
 
     if (mode === "pick") map.closePopup();
   }
   window.setRouteMode = setRouteMode;
-  window.getRouteMode = getRouteMode;
 
-  // ====== 地名入力モード ======
   let markers = [];
   let routeLine = null;
 
-  function addWaypoint() {
-    const count =
-      document.querySelectorAll("#waypoints input").length + 1;
-    const div = document.createElement("div");
-    div.className = "input-group";
-    div.innerHTML = `<label>経由地 ${count}:</label>
-      <input type="text" id="waypoint${count}" placeholder="例：仙台空港">`;
-    document.getElementById("waypoints").appendChild(div);
-  }
-  window.addWaypoint = addWaypoint;
+  // 経由地入力欄の追加
+  window.addWaypoint = function() {
+    const c = document.getElementById("waypoints");
+    const n = c.children.length + 1;
+    const d = document.createElement("div");
+    d.className = "input-group";
+    d.innerHTML = `<label>経由地 ${n}:</label><input type="text" class="waypoint-input" placeholder="経由地">`;
+    c.appendChild(d);
+  };
 
+  // ジオコーディング
   async function geocode(q) {
-    q = (q || "").trim();
+    q = (q||"").trim();
     if (!q) return null;
-
-    const fetchTO = (url, ms = 6000) => {
-      const ac = new AbortController();
-      const id = setTimeout(() => ac.abort(), ms);
-      return fetch(url, {
-        headers: { Accept: "application/json" },
-        signal: ac.signal,
-      }).finally(() => clearTimeout(id));
-    };
-
     try {
-      const r = await fetchTO(
-        `https://nominatim.openstreetmap.org/search?format=json&accept-language=ja&limit=1&q=${encodeURIComponent(
-          q
-        )}`
-      );
+      const u = `https://nominatim.openstreetmap.org/search?format=json&accept-language=ja&limit=1&q=${encodeURIComponent(q)}`;
+      const r = await fetch(u);
       if (r.ok) {
         const d = await r.json();
-        if (Array.isArray(d) && d.length > 0) {
-          return {
-            latlng: [+d[0].lat, +d[0].lon],
-            disp: d[0].display_name || q,
-          };
-        }
+        if (d && d.length>0) return { latlng:[+d[0].lat, +d[0].lon], name:d[0].display_name.split(",")[0]||q };
       }
-    } catch (_) {}
-
-    try {
-      const r = await fetchTO(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(
-          q
-        )}&lang=ja&limit=1`
-      );
-      if (r.ok) {
-        const d = await r.json();
-        if (d?.features?.length) {
-          const f = d.features[0];
-          const c = f.geometry?.coordinates;
-          if (Array.isArray(c)) {
-            return {
-              latlng: [c[1], c[0]],
-              disp:
-                f.properties?.name ||
-                f.properties?.city ||
-                f.properties?.country ||
-                q,
-            };
-          }
-        }
-      }
-    } catch (_) {}
-
-    alert(`位置取得失敗: ${q}`);
+    } catch(_){}
     return null;
   }
 
-  // ====== 地図クリックモード ======
-  const pickedSeq = []; // {latlng:[lat,lon], name:string, _marker:L.Marker}
-
+  // 地図クリック機能
+  let pickedSeq = [];
   function updatePickList() {
-    const box = document.getElementById("pickedList");
-    if (!box) return;
-
-    if (pickedSeq.length === 0) {
-      box.innerHTML =
-        '<div style="font-size:12px;color:#777;">まだ地点がありません。</div>';
+    const b = document.getElementById("pickedList");
+    if(!b) return;
+    if(pickedSeq.length===0) {
+      b.innerHTML = '<div style="font-size:12px;color:#777">地図をクリックして地点を追加</div>';
     } else {
-      const rows = pickedSeq
-        .map((p, i) => {
-          const tag =
-            i === 0
-              ? "出発地"
-              : i === pickedSeq.length - 1
-              ? "目的地"
-              : `経由地${i}`;
-          return `<div class="row"><span class="tag">${tag}</span><span>${p.name}</span></div>`;
-        })
-        .join("");
-      box.innerHTML = rows;
+      b.innerHTML = pickedSeq.map((p,i) => {
+        let t = `WP${i}`;
+        if(i===0) t="出発";
+        else if(i===pickedSeq.length-1) t="目的";
+        return `<div class="row"><span class="tag">${t}</span><span>${p.name}</span></div>`;
+      }).join("");
     }
-    updatePickButtons();
+    const btn = document.getElementById("pick-run-bar");
+    if(btn) btn.disabled = pickedSeq.length < 2;
   }
 
-  function updatePickButtons() {
-    const runBtn = document.getElementById("pick-run-bar");
-    if (runBtn) {
-      runBtn.disabled = pickedSeq.length < 2;
-    }
-  }
-
-  function undoPick() {
-    const last = pickedSeq.pop();
-    if (last && last._marker) {
-      map.removeLayer(last._marker);
-    }
+  window.clearPick = function(){
+    pickedSeq.forEach(p=>map.removeLayer(p._marker));
+    pickedSeq=[];
     updatePickList();
-  }
-  window.undoPick = undoPick;
-
-  function clearPick() {
-    pickedSeq.forEach((p) => p._marker && map.removeLayer(p._marker));
-    pickedSeq.length = 0;
+  };
+  window.undoPick = function(){
+    const p = pickedSeq.pop();
+    if(p) map.removeLayer(p._marker);
     updatePickList();
-  }
-  window.clearPick = clearPick;
+  };
 
-  // map-core.js からも使えるようにする（APTクリック時）
-  function addPickedPoint(latlng, label) {
-    const idx = pickedSeq.length + 1;
-    const name = label || `P${idx}`;
-    const m = L.marker(latlng).addTo(map).bindPopup(name);
-    pickedSeq.push({ latlng, name, _marker: m });
-    updatePickList();
-  }
-  window.addPickedPoint = addPickedPoint;
-
-  // 地図クリック（何もない場所をクリックしたとき）
   map.on("click", (e) => {
-    if (routeMode !== "pick") return;
-    // 空港や空域などのレイヤ上のクリックは、それぞれの onClick で処理
-    // ここでは「素の地図」のクリックだけを想定
-    addPickedPoint([e.latlng.lat, e.latlng.lng], `P${pickedSeq.length + 1}`);
+    if(routeMode!=="pick") return;
+    const ll = [e.latlng.lat, e.latlng.lng];
+    const m = L.marker(ll).addTo(map).bindPopup(`P${pickedSeq.length+1}`);
+    pickedSeq.push({ latlng:ll, name:`P${pickedSeq.length+1}`, _marker:m });
+    updatePickList();
   });
 
-  // ====== ルート描画（地名入力） ======
-  async function plotRoute() {
-    try {
-      if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
-      }
-      markers.forEach((m) => m && map.removeLayer(m));
-      markers = [];
-
-      const TAS = Math.max(
-        10,
-        parseFloat(document.getElementById("tas").value) || 120
-      );
-      const seq = [];
-
-      const sTxt = document.getElementById("start").value.trim();
-      if (sTxt) {
-        const s = await geocode(sTxt);
-        if (s) {
-          seq.push({ label: "出発地", name: sTxt, latlng: s.latlng });
-          markers.push(
-            L.marker(s.latlng).addTo(map).bindPopup("出発地")
-          );
-        }
-      }
-
-      const textWps = Array.from(
-        document.querySelectorAll("#waypoints input")
-      )
-        .map((i) => i.value.trim())
-        .filter(Boolean);
-
-      let idx = 1;
-      for (const wTxt of textWps) {
-        const w = await geocode(wTxt);
-        if (w) {
-          const name = wTxt || `WP${idx}`;
-          seq.push({ label: `WP${idx}`, name, latlng: w.latlng });
-          markers.push(
-            L.marker(w.latlng).addTo(map).bindPopup(name)
-          );
-          idx++;
-        }
-      }
-
-      const eTxt = document.getElementById("end").value.trim();
-      if (eTxt) {
-        const e = await geocode(eTxt);
-        if (e) {
-          seq.push({ label: "目的地", name: eTxt, latlng: e.latlng });
-          markers.push(
-            L.marker(e.latlng).addTo(map).bindPopup("目的地")
-          );
-        }
-      }
-
-      if (seq.length < 2) {
-        alert("少なくとも2地点（出発・目的地など）を指定してください。");
-        return;
-      }
-
-      const latlngs = seq.map((p) => p.latlng);
-      routeLine = L.polyline(latlngs, {
-        color: "red",
-        weight: 4,
-        opacity: 0.9,
-      }).addTo(map);
-      map.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
-
+  // 共通実行処理
+  async function runNavLog(seq, TAS) {
+    if(routeLine) { map.removeLayer(routeLine); routeLine=null; }
+    if(seq.length>1) {
+      const ll = seq.map(p=>p.latlng);
+      routeLine = L.polyline(ll, {color:"blue", weight:5, opacity:0.7}).addTo(map);
+      map.fitBounds(routeLine.getBounds(), {padding:[50,50]});
+    }
+    // navlog.jsの関数を呼び出し
+    if(window.showNavLog) {
       await window.showNavLog(seq, TAS);
       showTab("results");
-    } catch (err) {
-      console.error(err);
-      alert("ルート作成中にエラーが発生しました。コンソールをご確認ください。");
+    } else {
+      alert("Error: navlog.js not loaded");
     }
   }
-  window.plotRoute = plotRoute;
 
-  // ====== ルート描画（クリック選択） ======
-  async function plotRouteFromPicked() {
-    try {
-      if (pickedSeq.length < 2) {
-        alert("少なくとも2地点をクリックしてください。");
-        return;
-      }
-      if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
-      }
-
-      const TAS = Math.max(
-        10,
-        parseFloat(document.getElementById("tas").value) || 120
-      );
-
-      const seq = pickedSeq.map((p, i) => {
-        const label =
-          i === 0
-            ? "出発地"
-            : i === pickedSeq.length - 1
-            ? "目的地"
-            : `WP${i}`;
-        const name = label + `(${p.name})`;
-        return { label, name, latlng: p.latlng };
-      });
-
-      const latlngs = seq.map((p) => p.latlng);
-      routeLine = L.polyline(latlngs, {
-        color: "red",
-        weight: 4,
-        opacity: 0.9,
-      }).addTo(map);
-      map.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
-
-      await window.showNavLog(seq, TAS);
-      showTab("results");
-    } catch (err) {
-      console.error(err);
-      alert("クリックルート作成中にエラーが発生しました。コンソールをご確認ください。");
+  // 地名モード実行
+  window.plotRoute = async function() {
+    markers.forEach(m=>map.removeLayer(m)); markers=[];
+    if(routeLine) { map.removeLayer(routeLine); routeLine=null; }
+    
+    const TAS = parseFloat(document.getElementById("tas").value)||120;
+    const seq = [];
+    
+    const sTxt = document.getElementById("start").value;
+    if(sTxt) {
+      const r = await geocode(sTxt);
+      if(r) { seq.push(r); markers.push(L.marker(r.latlng).addTo(map).bindPopup("S")); }
     }
-  }
-  window.plotRouteFromPicked = plotRouteFromPicked;
-
-  // ====== リセット ======
-  function resetAll() {
-    markers.forEach((m) => m && map.removeLayer(m));
-    markers = [];
-    if (routeLine) {
-      map.removeLayer(routeLine);
-      routeLine = null;
+    const wis = document.querySelectorAll("#waypoints .waypoint-input");
+    for(const i of wis) {
+      if(i.value) {
+        const r = await geocode(i.value);
+        if(r) { seq.push(r); markers.push(L.marker(r.latlng).addTo(map).bindPopup("W")); }
+      }
+    }
+    const eTxt = document.getElementById("end").value;
+    if(eTxt) {
+      const r = await geocode(eTxt);
+      if(r) { seq.push(r); markers.push(L.marker(r.latlng).addTo(map).bindPopup("E")); }
     }
 
-    clearPick();
+    if(seq.length<2) return alert("2地点以上必要です");
+    await runNavLog(seq, TAS);
+  };
 
-    document.getElementById("results").innerHTML = "";
-    document.getElementById("waypoints").innerHTML = "";
-    document.getElementById("start").value = "";
-    document.getElementById("end").value = "";
-    document.getElementById("tas").value = 120;
-    document.getElementById("alt").value = 3000;
-    document.getElementById("etd").value = "";
-    document.getElementById("windDir").value = "";
-    document.getElementById("windSpd").value = "";
-    document.getElementById("dev").value = "0";
-    document.getElementById("burnPerHour").value = "30";
-    document.getElementById("startFuel").value = "100";
+  // クリックモード実行
+  window.plotRouteFromPicked = async function() {
+    if(pickedSeq.length<2) return alert("2地点以上必要です");
+    const TAS = parseFloat(document.getElementById("tas").value)||120;
+    const seq = pickedSeq.map(p=>({ name:p.name, latlng:p.latlng }));
+    await runNavLog(seq, TAS);
+  };
 
+  // リセット
+  window.resetAll = function() {
+    markers.forEach(m=>map.removeLayer(m)); markers=[];
+    window.clearPick();
+    if(routeLine) { map.removeLayer(routeLine); routeLine=null; }
+    document.getElementById("results").innerHTML="";
+    document.getElementById("waypoints").innerHTML="";
+    document.getElementById("start").value="";
+    document.getElementById("end").value="";
     showTab("input");
     setRouteMode("text");
-  }
-  window.resetAll = resetAll;
+  };
 
-  window.addEventListener("load", () => {
-    setTimeout(() => map.invalidateSize(), 0);
-    updatePickList();
+  // リサイズ監視
+  window.addEventListener("resize", () => {
+    if (window.fitNavPaper && document.body.classList.contains("results-layout")) {
+      window.fitNavPaper();
+    }
   });
 })();
