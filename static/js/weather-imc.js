@@ -1,83 +1,92 @@
 // static/js/weather-imc.js
-console.log("[IMC] init weather-imc.js (AVWX Linked)");
+console.log("[IMC] init weather-imc.js (30nm Cells)");
 
 (function() {
   const map = window.navMap;
   if (!map) return;
 
-  // --- 1. グローバルMETAR取得関数 (map-core.jsから利用) ---
-  // app.py (/api/metar) 経由で AVWX のデータを取得します
+  // 1. グローバルMETAR取得関数
   window.avwxFetchMetar = async function(icao) {
     if (!icao) return null;
     try {
-      // app.py の AVWX プロキシを叩く
       const res = await fetch(`/api/metar?icao=${icao}`);
       if (!res.ok) return null;
       const data = await res.json();
       
-      // AVWXのレスポンス形式 ("flight_rules": "VFR", "raw": "...") を整形して返す
-      if (data.raw) {
+      if (data.raw_text) {
+        let rule = "VFR";
+        let ceiling = 99999;
+        let vis = 99999;
+
+        if (data.clouds) {
+          const cigs = data.clouds
+            .filter(c => c.cover === 'BKN' || c.cover === 'OVC')
+            .map(c => c.base);
+          if (cigs.length > 0) ceiling = Math.min(...cigs);
+        }
+        if (data.visibility && data.visibility.meters) {
+          vis = parseFloat(data.visibility.meters);
+        }
+
+        if (ceiling < 500 || vis < 1600) rule = "LIFR";
+        else if (ceiling < 1000 || vis < 5000) rule = "IFR";
+        else if (ceiling <= 3000 || vis <= 8000) rule = "MVFR";
+
         return {
-          flight_rules: data.flight_rules, // "VFR", "MVFR", "IFR", "LIFR"
-          raw: data.raw,
-          time: data.meta ? data.meta.timestamp : "" // 時刻情報など
+          flight_rules: rule,
+          raw: data.raw_text,
+          time: data.observation_time
         };
       }
       return null;
     } catch (e) {
-      console.warn("METAR fetch error:", e);
       return null;
     }
   };
 
-  // --- 2. メッシュ（矩形）描画レイヤー ---
-  const meshLayer = L.layerGroup(); 
-  
-  // デフォルトで地図に追加（表示状態にする）
+  // 2. メッシュ描画レイヤー
+  const meshLayer = L.layerGroup();
   meshLayer.addTo(map);
 
-  // ★重要: 地図右上のレイヤーコントロールに「気象情報」として追加
-  // map-core.js の初期化を待ってから追加
+  // レイヤーコントロールへの追加
   const addLayerToControl = () => {
     if (window.navLayersControl) {
       window.navLayersControl.addOverlay(meshLayer, "気象情報 (IMC/MVFR)");
     } else {
-      setTimeout(addLayerToControl, 500); // まだなら再トライ
+      setTimeout(addLayerToControl, 200);
     }
   };
   addLayerToControl();
 
   const AIRPORTS_JSON = "/static/data/jp_apt.geojson";
 
-  // 色設定: IMC(LIFR/IFR)=赤, MVFR=紫
   function getMeshColor(rule) {
     if (!rule) return null;
     const r = rule.toUpperCase();
     if (r === "LIFR" || r === "IFR") return "#FF0000"; 
     if (r === "MVFR") return "#800080"; 
-    return null; // VFRは塗らない
+    return null;
   }
 
-  // メッシュ更新処理
   async function updateMeshes() {
     try {
       const res = await fetch(AIRPORTS_JSON);
       const data = await res.json();
       meshLayer.clearLayers();
 
-      // 各空港について順次処理
       for (const f of data.features) {
         const icao = f.properties.icao;
         if (!icao) continue;
 
-        // APIコール (window.avwxFetchMetarを利用)
         const metar = await window.avwxFetchMetar(icao);
         if (metar) {
           const color = getMeshColor(metar.flight_rules);
           if (color) {
             const lat = f.geometry.coordinates[1];
             const lon = f.geometry.coordinates[0];
-            const size = 0.08; // 矩形のサイズ（約10km四方）
+            
+            // ★変更箇所: 30nm ≒ 0.5度
+            const size = 0.5; 
             
             L.rectangle(
               [[lat - size, lon - size], [lat + size, lon + size]],
@@ -87,26 +96,21 @@ console.log("[IMC] init weather-imc.js (AVWX Linked)");
         }
       }
     } catch(e) {
-      console.error("Mesh update failed", e);
+      console.error("Mesh update error", e);
     }
   }
 
-  // 初回実行 & 10分おきに更新
   updateMeshes();
-  setInterval(updateMeshes, 600000);
+  setInterval(updateMeshes, 300000);
 
-  // --- 3. 地図上の凡例 (Legend) ---
+  // 3. 凡例
   const legend = L.control({ position: 'bottomright' });
   legend.onAdd = function (map) {
     const div = L.DomUtil.create('div', 'map-legend');
     div.innerHTML = `
-      <div style="font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:4px;">Weather</div>
-      <div style="display:flex; align-items:center; margin-bottom:2px;">
-        <span style="background:#FF0000; width:12px; height:12px; display:inline-block; margin-right:6px; border:1px solid #ccc;"></span> IMC
-      </div>
-      <div style="display:flex; align-items:center;">
-        <span style="background:#800080; width:12px; height:12px; display:inline-block; margin-right:6px; border:1px solid #ccc;"></span> MVFR
-      </div>
+      <div style="font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:4px; font-size:11px;">Weather</div>
+      <div style="font-size:11px; margin-bottom:2px;"><i style="background:#FF0000; width:10px; height:10px; float:left; margin-right:6px; border:1px solid #ccc;"></i> IMC</div>
+      <div style="font-size:11px;"><i style="background:#800080; width:10px; height:10px; float:left; margin-right:6px; border:1px solid #ccc;"></i> MVFR</div>
     `;
     return div;
   };
