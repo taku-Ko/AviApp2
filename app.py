@@ -1,4 +1,3 @@
-# app.py
 import os
 from flask import Flask, render_template, request, jsonify
 import requests
@@ -6,8 +5,12 @@ import requests
 app = Flask(__name__)
 
 # ====== 設定 ======
-# AVWX トークンは Render / ローカルの環境変数 AVWX_TOKEN から読む
-AVWX_TOKEN = os.environ.get("AVWX_TOKEN", "").strip()
+# ★ローカル確認用: ここにAVWXのトークンを直接貼り付けてください
+# (本番環境では環境変数 AVWX_TOKEN が優先されます)
+LOCAL_AVWX_TOKEN = ""
+
+# 環境変数があればそれを使い、なければ直書きトークンを使う
+AVWX_TOKEN = os.environ.get("AVWX_TOKEN", LOCAL_AVWX_TOKEN).strip()
 
 # Open-Meteo のベースURL（GFSベースの高層風）
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -16,14 +19,12 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 # ====== ルート：メイン画面 ======
 @app.route("/")
 def index():
-    # templates/map.html を表示
     return render_template("map.html")
 
 
 # ====== ルート：出典ページ ======
 @app.route("/credits")
 def credits():
-    # templates/credits.html を表示
     return render_template("credits.html")
 
 
@@ -38,10 +39,17 @@ def api_metar():
     if not icao:
         return jsonify({"error": "icao is required"}), 400
 
+    # AVWXトークンのチェック
+    if not AVWX_TOKEN or "あなたのAVWXトークン" in AVWX_TOKEN:
+        print("Warning: AVWX Token is missing or placeholder.")
+        # トークンがない場合でも、モックデータ等を返さずエラーにして気づかせる
+        # return jsonify({"error": "AVWX Token missing"}), 500
+
     url = f"https://avwx.rest/api/metar/{icao}"
     headers = {"Accept": "application/json"}
+    
     if AVWX_TOKEN:
-        headers["Authorization"] = f"Bearer {AVWX_TOKEN}"  # トークンはサーバ側だけで保持
+        headers["Authorization"] = f"Bearer {AVWX_TOKEN}"
 
     params = {
         "format": "json",
@@ -49,22 +57,17 @@ def api_metar():
     }
 
     try:
-        # 修正: タイムアウトを 8秒 -> 30秒 に延長
+        # タイムアウトを30秒に設定
         r = requests.get(url, headers=headers, params=params, timeout=30)
         r.raise_for_status()
         data = r.json()
         return jsonify(data)
     except requests.RequestException as e:
-        # 502 Bad Gateway を返すことで、フロント側は取得失敗を知る
         return jsonify({"error": f"AVWX request failed: {e}"}), 502
 
 
 # ====== 高度(ft) → 等圧面(hPa) の簡易対応表 ======
 def alt_ft_to_level(alt_ft: float) -> str:
-    """
-    入力された巡航高度(ft) に最も近い等圧面をざっくり対応させる。
-    Open-Meteo GFS で確実に取れる標準気圧面 (1000, 925, 850...) に合わせる。
-    """
     if alt_ft is None:
         alt_ft = 3000.0
     try:
@@ -72,16 +75,15 @@ def alt_ft_to_level(alt_ft: float) -> str:
     except ValueError:
         alt_ft = 3000.0
 
-    # 修正: 950hPa は欠損の可能性があるため、925hPa を優先する構成に変更
     table = [
-        (1500,  "975hPa"), # 地表付近
-        (3500,  "925hPa"), # 3000ft付近 (以前は950だったが925に変更)
-        (6000,  "850hPa"), # 5000-6000ft
-        (10000, "700hPa"), # 9000-10000ft
+        (1500,  "975hPa"),
+        (3500,  "925hPa"),
+        (6000,  "850hPa"),
+        (10000, "700hPa"),
         (14000, "600hPa"),
-        (18000, "500hPa"), # FL180
+        (18000, "500hPa"),
         (24000, "400hPa"),
-        (30000, "300hPa"), # FL300
+        (30000, "300hPa"),
         (34000, "250hPa"),
         (39000, "200hPa"),
         (45000, "150hPa"),
@@ -95,17 +97,6 @@ def alt_ft_to_level(alt_ft: float) -> str:
 # ====== GFS（Open-Meteo）風向風速 API ======
 @app.route("/api/gfs_wind", methods=["POST"])
 def api_gfs_wind():
-    """
-    フロント（navlog.js / gfs-wind.js）からは、
-      POST /api/gfs_wind
-      JSON: {
-        "alt_ft": 3000,
-        "points": [
-          {"id": 0, "lat": 35.6, "lon": 139.8},
-          ...
-        ]
-      }
-    """
     payload = request.get_json(silent=True) or {}
     points = payload.get("points") or []
     alt_ft = payload.get("alt_ft", 3000)
@@ -117,7 +108,6 @@ def api_gfs_wind():
     var_speed = f"wind_speed_{level}"
     var_dir = f"wind_direction_{level}"
 
-    # Open-Meteo は複数座標をカンマ区切りで投げられる
     lats = []
     lons = []
     for p in points:
@@ -127,27 +117,26 @@ def api_gfs_wind():
         except Exception:
             continue
 
-    if not lats or not lons or len(lats) != len(lons):
+    if not lats or not lons:
         return jsonify({"error": "invalid coordinates"}), 400
 
     params = {
         "latitude": ",".join(lats),
         "longitude": ",".join(lons),
         "hourly": f"{var_speed},{var_dir}",
-        "windspeed_unit": "kn",  # ノット
-        "models": "gfs_seamless",  # 修正: ncep_gfs013 -> gfs_seamless (より安定)
+        "windspeed_unit": "kn",
+        "models": "gfs_seamless",
         "forecast_days": 1,
         "timezone": "UTC",
     }
 
     try:
-        r = requests.get(OPEN_METEO_URL, params=params, timeout=8)
+        r = requests.get(OPEN_METEO_URL, params=params, timeout=10)
         r.raise_for_status()
         js = r.json()
     except requests.RequestException as e:
         return jsonify({"error": f"Open-Meteo request failed: {e}"}), 502
 
-    # 単一地点 → dict, 複数地点 → list[dict] という仕様なので両方対応
     if isinstance(js, list):
         locations = js
     else:
@@ -159,12 +148,10 @@ def api_gfs_wind():
         spd_arr = hourly.get(var_speed) or []
         dir_arr = hourly.get(var_dir) or []
         
-        # 配列が空、またはデータがない場合はスキップ
         if not spd_arr or not dir_arr:
             continue
 
         try:
-            # 0番目（現在時刻または開始時刻）を取得
             spd = float(spd_arr[0])
             direc = float(dir_arr[0])
         except Exception:
@@ -194,14 +181,6 @@ def api_gfs_wind():
         }
     )
 
-
-# ====== ヘルスチェック用（任意） ======
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok"})
-
-
 if __name__ == "__main__":
-    # ローカル開発用。Render では gunicorn app:app が使われる。
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port, debug=True)

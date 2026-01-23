@@ -1,30 +1,21 @@
 // static/js/map-core.js
-console.log("[MAP] init map-core.js (Restored UI)");
+console.log("[MAP] init map-core.js (FIXED: Popup Suppression)");
 
 (function () {
   const map = L.map("map", { zoomControl: false }).setView([36.0, 140.0], 7);
   window.navMap = map;
 
-  // 地図切り替え用ベースレイヤー
+  // ベースレイヤー
   const baseLayers = {
-    "標準地図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {
-      attribution: "GSI Tiles", maxZoom: 18
-    }),
-    "色別標高図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png", {
-      attribution: "GSI Tiles", maxZoom: 18
-    }),
-    "航空写真": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", {
-      attribution: "GSI Tiles", maxZoom: 18
-    }),
-    "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap"
-    })
+    "標準地図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", { attribution: "GSI Tiles", maxZoom: 18 }),
+    "色別標高図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png", { attribution: "GSI Tiles", maxZoom: 18 }),
+    "航空写真": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", { attribution: "GSI Tiles", maxZoom: 18 }),
+    "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" })
   };
   baseLayers["標準地図"].addTo(map);
 
-  // レイヤーコントロール作成・登録
   const layersCtrl = L.control.layers(baseLayers, {}, { position: "topright", collapsed: false }).addTo(map);
-  window.navLayersControl = layersCtrl; // 他のJSからアクセスできるように公開
+  window.navLayersControl = layersCtrl;
 
   L.control.zoom({ position: "bottomright" }).addTo(map);
   L.control.scale({ position: "bottomleft", metric: true, imperial: false }).addTo(map);
@@ -46,7 +37,7 @@ console.log("[MAP] init map-core.js (Restored UI)");
       const data = await r.json();
       const layer = L.geoJSON(data, opts);
       layer.addTo(map);
-      if(name) layersCtrl.addOverlay(layer, name); // コントロールに追加
+      if(name) layersCtrl.addOverlay(layer, name);
       return layer;
     } catch (e) { return null; }
   }
@@ -57,12 +48,12 @@ console.log("[MAP] init map-core.js (Restored UI)");
       style: styleAirspace,
       onEachFeature: (f, layer) => {
         const p = f.properties || {};
-        layer.bindPopup(`<b>${p.name || "Airspace"}</b><br>${p.type || ""}`);
         layer.on("click", (e) => {
           if (window.routeMode === "pick") {
-            e.target.closePopup();
-            L.DomEvent.stop(e);
+            L.DomEvent.stopPropagation(e); // 伝播停止
             if(window.handlePointPick) window.handlePointPick(e.latlng, p.name || "Airspace");
+          } else {
+            L.popup().setLatLng(e.latlng).setContent(`<b>${p.name || "Airspace"}</b><br>${p.type || ""}`).openOn(map);
           }
         });
       },
@@ -93,12 +84,12 @@ console.log("[MAP] init map-core.js (Restored UI)");
       pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 3 }),
       onEachFeature: (f, layer) => {
         const p = f.properties || {};
-        layer.bindPopup(`<b>${p.name || p.ident}</b>`);
         layer.on("click", (e) => {
           if (window.routeMode === "pick") {
-            e.target.closePopup();
-            L.DomEvent.stop(e);
+            L.DomEvent.stopPropagation(e);
             if(window.handlePointPick) window.handlePointPick(e.latlng, p.ident || p.name);
+          } else {
+            L.popup().setLatLng(e.latlng).setContent(`<b>${p.name || p.ident}</b>`).openOn(map);
           }
         });
       },
@@ -111,34 +102,40 @@ console.log("[MAP] init map-core.js (Restored UI)");
     const name = p.name_ja || p.name || icao || "Unknown";
 
     layer.on("click", async (e) => {
+      // Pickモードなら登録処理のみして終了 (ポップアップは出さない)
       if (window.routeMode === "pick") {
-        e.target.closePopup();
-        L.DomEvent.stop(e);
+        L.DomEvent.stopPropagation(e);
         if (window.handlePointPick) window.handlePointPick(e.latlng, icao || name);
         return;
       }
+
+      // Normalモード: METAR表示
       let html = `<b>${name}</b>`;
       if (icao) html += ` (${icao})`;
+      html += `<br>Loading METAR...`;
+
+      const popup = L.popup().setLatLng(e.latlng).setContent(html).openOn(map);
 
       if (icao && typeof window.avwxFetchMetar === "function") {
-        layer.bindPopup(html + "<br>Loading METAR...").openPopup();
         const data = await window.avwxFetchMetar(icao);
         if (data) {
           let colorStr = "#000";
-          if(data.flight_rules === "VFR") colorStr = "green";
-          else if(data.flight_rules === "MVFR") colorStr = "purple";
-          else if(data.flight_rules === "IFR" || data.flight_rules === "LIFR") colorStr = "red";
+          const fr = (data.flight_rules || "").toUpperCase();
+          if(fr === "VFR") colorStr = "green";
+          else if(fr === "MVFR") colorStr = "purple";
+          else if(fr === "IFR" || fr === "LIFR") colorStr = "red";
 
-          html += `<br><span style="color:${colorStr};font-weight:bold;">${data.flight_rules}</span>`;
-          html += `<br><div style="font-size:11px; margin-top:4px;">${data.raw}</div>`;
-          html += `<div style="font-size:10px; color:#666;">${data.time}</div>`;
+          let newHtml = `<b>${name}</b>`;
+          if (icao) newHtml += ` (${icao})`;
+          newHtml += `<br><span style="color:${colorStr};font-weight:bold;">${fr}</span>`;
+          newHtml += `<br><pre style="margin:4px 0;white-space:pre-wrap;font-size:11px;">${data.raw}</pre>`;
+          newHtml += `<div style="font-size:10px; color:#666;">${data.time}</div>`;
+          popup.setContent(newHtml);
         } else {
-          html += `<br><span style="font-size:11px;color:gray">No Data</span>`;
+          popup.setContent(html.replace("Loading METAR...", "<span style='color:gray'>No Data</span>"));
         }
-        layer.setPopupContent(html);
       } else {
-        html += `<br><span style="color:#666;">${p.municipality || ""}</span>`;
-        layer.bindPopup(html).openPopup();
+        popup.setContent(`<b>${name}</b><br><span style="color:#666;">${p.municipality || ""}</span>`);
       }
     });
   }

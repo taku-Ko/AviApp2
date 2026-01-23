@@ -1,40 +1,18 @@
-// static/js/weather-imc.js
-console.log("[IMC] init weather-imc.js (Parallel Fetch & 30nm Cells)");
+console.log("[IMC] init weather-imc.js (Clean Logic)");
 
 (function() {
   const map = window.navMap;
   if (!map) return;
 
-  // --- 1. グローバルMETAR取得関数 ---
-  // app.py の /api/metar (AVWX経由) を利用
-  window.avwxFetchMetar = async function(icao) {
-    if (!icao) return null;
-    try {
-      // キャッシュ回避用のタイムスタンプ付与も検討できますが、まずは標準で
-      const res = await fetch(`/api/metar?icao=${icao}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      
-      if (data.raw) {
-        return {
-          flight_rules: data.flight_rules, // "VFR", "MVFR", "IFR", "LIFR"
-          raw: data.raw,
-          time: data.meta ? data.meta.timestamp : ""
-        };
-      }
-      return null;
-    } catch (e) {
-      // エラー時は静かに無視（コンソールが汚れるのを防ぐためwarn程度に）
-      console.warn(`METAR fetch failed for ${icao}`, e);
-      return null;
-    }
-  };
+  const MESH_STEP = 0.16; // 約10nm (グリッドサイズ)
+  const RANGE_LIMIT_M = 55560; // 30nm ≒ 55560m
+  const AIRPORTS_JSON = "/static/data/jp_apt.geojson";
+  
+  const meshLayer = L.layerGroup().addTo(map);
+  let allAirports = [];
+  let metarCache = {};
 
-  // --- 2. メッシュ（矩形）レイヤー ---
-  const meshLayer = L.layerGroup();
-  meshLayer.addTo(map); // デフォルト表示
-
-  // 地図右上のレイヤーコントロールに追加 (map-core.jsのロード待ちリトライ付き)
+  // レイヤーコントロールへ追加
   const addLayerToControl = () => {
     if (window.navLayersControl) {
       window.navLayersControl.addOverlay(meshLayer, "気象情報 (IMC/MVFR)");
@@ -44,105 +22,147 @@ console.log("[IMC] init weather-imc.js (Parallel Fetch & 30nm Cells)");
   };
   addLayerToControl();
 
-  const AIRPORTS_JSON = "/static/data/jp_apt.geojson";
+  // --- 1. METAR取得 ---
+  window.avwxFetchMetar = async function(icao) {
+    if (!icao) return null;
+    try {
+      const res = await fetch(`/api/metar?icao=${icao}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.raw ? data : null;
+    } catch (e) { return null; }
+  };
 
-  // 色設定
-  function getMeshColor(rule) {
-    if (!rule) return null;
-    const r = rule.toUpperCase();
-    if (r === "LIFR" || r === "IFR") return "#FF0000"; // 赤 (IMC)
-    if (r === "MVFR") return "#800080"; // 紫 (MVFR)
-    if (r === "VFR") return "#00FF00";  // 緑 (VMC) - 読み込み確認用
-    return null;
-  }
-
-  // 並列処理用のヘルパー関数
-  async function fetchAllMetars(features) {
-    // 同時リクエスト数制限（ブラウザ負荷軽減のため5-10程度に）
-    const CONCURRENCY = 6; 
-    const queue = [...features]; // コピーを作成
-    let activeCount = 0;
-
-    // 1つのワーカー処理
+  async function fetchAllMetars() {
+    // 負荷分散のため同時リクエスト数を制限
+    const queue = [...allAirports];
     const worker = async () => {
-      while (queue.length > 0) {
-        const f = queue.shift();
-        const icao = f.properties.icao;
-        if (!icao) continue;
+      while (queue.length) {
+        const apt = queue.shift();
+        if (metarCache[apt.icao]) continue; // キャッシュ済みならスキップ
 
-        // METAR取得
-        const metar = await window.avwxFetchMetar(icao);
-        
-        // 取得でき次第、即座に描画（ユーザーへのフィードバックを早くする）
-        if (metar) {
-          const color = getMeshColor(metar.flight_rules);
-          if (color) {
-            const lat = f.geometry.coordinates[1];
-            const lon = f.geometry.coordinates[0];
-            
-            // ★変更: 30nm ≒ 0.5度 (半径)
-            // 中心から±0.5度 = 一辺1.0度(60nm)のボックスになります
-            const size = 0.5; 
-            
-            // VFRの場合は邪魔にならないよう透明度を下げる
-            const opacity = (metar.flight_rules === "VFR") ? 0.1 : 0.35;
-
-            L.rectangle(
-              [[lat - size, lon - size], [lat + size, lon + size]],
-              { 
-                color: color, 
-                weight: 0, 
-                fillOpacity: opacity, 
-                stroke: false 
-              }
-            ).addTo(meshLayer);
-          }
+        const data = await window.avwxFetchMetar(apt.icao);
+        if (data && data.flight_rules) {
+          metarCache[apt.icao] = data.flight_rules;
+          updateGrid(); // 1件取得するたびに描画更新
         }
       }
     };
-
-    // ワーカーを並列起動
-    const workers = [];
-    for (let i = 0; i < CONCURRENCY; i++) {
-      workers.push(worker());
-    }
-    await Promise.all(workers);
+    // 4並列で実行
+    for(let i=0; i<4; i++) worker();
   }
 
-  // メッシュ更新メイン処理
-  async function updateMeshes() {
+  // --- 2. データ読み込み ---
+  async function init() {
     try {
-      console.log("Starting weather update...");
       const res = await fetch(AIRPORTS_JSON);
       const data = await res.json();
       
-      meshLayer.clearLayers(); // 更新時はクリア
+      // GeoJSONのプロパティを確認して整形
+      allAirports = data.features.map(f => {
+        const p = f.properties;
+        // jp_apt.geojson の構造に合わせて取得 (map-core.jsの実装を参考に icaoCode > icao > ident の順)
+        const code = p.icaoCode || p.icao || p.ident;
+        return {
+          icao: code,
+          latlng: L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0])
+        };
+      }).filter(a => a.icao);
 
-      // 並列フェッチ実行
-      await fetchAllMetars(data.features);
-      console.log("Weather update completed.");
-
+      generateGrid();
+      fetchAllMetars();
     } catch(e) {
-      console.error("Mesh update error", e);
+      console.error("[IMC] Init failed", e);
     }
   }
 
-  // 初回実行 & 10分ごとに更新
-  updateMeshes();
-  setInterval(updateMeshes, 600000);
+  // --- 3. グリッド生成・更新 ---
+  // 色決定ロジック (VFRはnull=塗らない)
+  function getColor(rule) {
+    if (!rule) return null;
+    const r = rule.toUpperCase();
+    if (r === "LIFR" || r === "IFR") return "#FF0000"; // 赤
+    if (r === "MVFR") return "#800080"; // 紫
+    return null;
+  }
 
-  // --- 3. 凡例 (Legend) ---
+  // グリッド生成（各セルの最寄り空港を判定して描画）
+  function generateGrid() {
+    meshLayer.clearLayers();
+    if (!allAirports.length) return;
+
+    const bounds = map.getBounds();
+    const south = Math.floor(bounds.getSouth() / MESH_STEP) * MESH_STEP;
+    const north = Math.ceil(bounds.getNorth() / MESH_STEP) * MESH_STEP;
+    const west = Math.floor(bounds.getWest() / MESH_STEP) * MESH_STEP;
+    const east = Math.ceil(bounds.getEast() / MESH_STEP) * MESH_STEP;
+
+    for (let lat = south; lat <= north; lat += MESH_STEP) {
+      for (let lon = west; lon <= east; lon += MESH_STEP) {
+        
+        const cellCenter = L.latLng(lat + MESH_STEP/2, lon + MESH_STEP/2);
+        
+        // 最寄り空港を探索
+        let nearest = null;
+        let minDist = Infinity;
+        
+        for (const apt of allAirports) {
+          const d = cellCenter.distanceTo(apt.latlng); // Leaflet標準の距離計算(m)
+          if (d < minDist) {
+            minDist = d;
+            nearest = apt;
+          }
+        }
+
+        // 30nm (55560m) 以内ならセルを作成
+        if (nearest && minDist <= RANGE_LIMIT_M) {
+          const rect = L.rectangle(
+            [[lat, lon], [lat + MESH_STEP, lon + MESH_STEP]],
+            { weight: 0, fillOpacity: 0, interactive: false }
+          );
+          rect.nearestIcao = nearest.icao;
+          meshLayer.addLayer(rect);
+        }
+      }
+    }
+    updateGrid();
+  }
+
+  // 現在のMETAR状況に合わせて色を反映
+  function updateGrid() {
+    meshLayer.eachLayer(layer => {
+      const rule = metarCache[layer.nearestIcao];
+      const color = getColor(rule);
+      if (color) {
+        layer.setStyle({ color: color, fillOpacity: 0.35 });
+      } else {
+        layer.setStyle({ fillOpacity: 0 }); // VFR or データなしは透明
+      }
+    });
+  }
+
+  // イベント
+  map.on('moveend', generateGrid);
+  
+  // 定期更新 (10分)
+  setInterval(() => {
+    metarCache = {};
+    fetchAllMetars();
+  }, 600000);
+
+  // 開始
+  init();
+
+  // 凡例
   const legend = L.control({ position: 'bottomright' });
-  legend.onAdd = function (map) {
-    const div = L.DomUtil.create('div', 'map-legend');
-    // VMC(緑)も凡例に追加
-    div.innerHTML = `
-      <div style="font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:4px; font-size:11px;">Weather</div>
-      <div style="font-size:11px; margin-bottom:2px;"><i style="background:#FF0000; width:10px; height:10px; float:left; margin-right:6px; border:1px solid #ccc;"></i> IMC</div>
-      <div style="font-size:11px; margin-bottom:2px;"><i style="background:#800080; width:10px; height:10px; float:left; margin-right:6px; border:1px solid #ccc;"></i> MVFR</div>
-      <div style="font-size:11px;"><i style="background:#00FF00; width:10px; height:10px; float:left; margin-right:6px; border:1px solid #ccc; opacity:0.5;"></i> VMC</div>
+  legend.onAdd = () => {
+    const d = L.DomUtil.create('div', 'map-legend');
+    d.innerHTML = `
+      <div style="font-weight:bold;font-size:11px;border-bottom:1px solid #ccc;">Weather</div>
+      <div style="font-size:11px;"><i style="background:#FF0000;width:10px;height:10px;float:left;margin-right:4px;"></i>IMC</div>
+      <div style="font-size:11px;"><i style="background:#800080;width:10px;height:10px;float:left;margin-right:4px;"></i>MVFR</div>
     `;
-    return div;
+    return d;
   };
   legend.addTo(map);
 })();
