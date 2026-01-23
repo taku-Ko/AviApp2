@@ -4,16 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>航法計画作成支援システム</title>
-  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  
   <link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}" />
 </head>
-
 <body>
   <div id="container">
     <div id="map"></div>
-
     <div id="sidebar">
       
       <div id="inputTab">
@@ -26,19 +22,19 @@
         <div id="text-route-panel">
           <div class="input-group">
             <label>出発地:</label>
-            <input type="text" id="start" placeholder="例：新千歳空港">
+            <input type="text" id="start" placeholder="例：RJTT">
           </div>
           <div id="waypoints"></div>
           <button onclick="window.addWaypoint()" style="width:100%; padding:6px; margin-bottom:10px;">＋ 経由地を追加</button>
           <div class="input-group">
             <label>目的地:</label>
-            <input type="text" id="end" placeholder="例：羽田空港">
+            <input type="text" id="end" placeholder="例：RJCJ">
           </div>
         </div>
 
         <div id="pick-route-panel" style="display:none;">
           <div class="input-group">
-            <label>地図をクリックして地点を登録</label>
+            <label>地図上の地点をクリックして追加</label>
           </div>
           <div id="pickedList"></div>
           <div style="display:flex; gap:6px; margin-top:6px;">
@@ -67,7 +63,6 @@
             <input type="number" id="windDir" placeholder="Deg" min="0" max="359">
             <input type="number" id="windSpd" placeholder="Kt" min="0">
           </div>
-          <div style="font-size:11px; color:#666;">※空白時はGFS風予報を自動取得</div>
         </div>
         <div class="input-group">
           <label>自差 (DEV)：</label>
@@ -83,11 +78,10 @@
         </div>
 
         <div id="actionBar">
-          <button id="plot-button-bar" onclick="window.plotRoute()">NavLog 作成（地名）</button>
-          <button id="pick-run-bar" onclick="window.plotRouteFromPicked()" disabled style="display:none;">NavLog 作成（クリック）</button>
+          <button id="plot-button-bar" onclick="window.plotRoute()">NavLog 作成</button>
+          <button id="pick-run-bar" onclick="window.plotRouteFromPicked()" disabled style="display:none;">NavLog 作成</button>
           <button id="reset-button" onclick="window.resetAll()">リセット</button>
         </div>
-        
         <div id="credits-link" style="margin-top:20px; text-align:center; font-size:12px;">
           <a href="{{ url_for('credits') }}" target="_blank">出典・ライセンス</a>
         </div>
@@ -96,16 +90,14 @@
       <div id="resultsTab" style="display:none;">
         <div class="results-toolbar">
           <button class="btn-back" onclick="window.showTab('input')">◀ 条件入力へ戻る</button>
-          <button class="btn-print" onclick="window.print()">🖨 印刷 / PDF</button>
+          <button class="btn-print" onclick="window.print()">🖨 印刷 (B5縦)</button>
         </div>
         <div id="results"></div>
       </div>
-
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  
   <script src="{{ url_for('static', filename='js/map-core.js') }}"></script>
   <script src="{{ url_for('static', filename='js/weather-imc.js') }}"></script>
   <script src="{{ url_for('static', filename='js/gfs-wind.js') }}"></script>

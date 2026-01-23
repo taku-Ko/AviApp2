@@ -1,10 +1,8 @@
 // static/js/navlog.js
-console.log("[NAVLOG] init navlog.js (Fix: Borders & No Total Text)");
+console.log("[NAVLOG] init navlog.js (Separated Total / Fixed Borders)");
 
 (function () {
-  // --- Math Helpers ---
   const toRad = d => d * Math.PI / 180;
-  const toDeg = r => r * 180 / Math.PI;
   const norm360 = d => ((d % 360) + 360) % 360;
 
   function calcDist(a, b) {
@@ -23,12 +21,12 @@ console.log("[NAVLOG] init navlog.js (Fix: Borders & No Total Text)");
     const beta = toRad(norm360(wd + 180) - norm360(TC));
     const xwind = ws * Math.sin(beta);
     const hwind = ws * Math.cos(beta);
-    const WCA = toDeg(Math.asin(Math.max(-1, Math.min(1, xwind/Math.max(1,TAS)))));
+    const WCA = (Math.asin(Math.max(-1, Math.min(1, xwind/Math.max(1,TAS))))) * 180 / Math.PI;
     const GS = Math.max(1, TAS * Math.cos(toRad(WCA)) + hwind);
     return { WCA, GS };
   }
 
-  // --- Data Fetch ---
+  // GSI Var
   const GSI_TXT_PATH = "/static/data/000237031.txt";
   let _gsiVarGrid = null;
   async function getVariation(lat, lon) {
@@ -80,7 +78,6 @@ console.log("[NAVLOG] init navlog.js (Fix: Borders & No Total Text)");
       });
       return o;
     } catch(e) {
-      console.warn("Wind fetch failed:", e);
       const o={}; legs.forEach((_,i)=>o[i]=fb); return o;
     }
   }
@@ -184,10 +181,7 @@ console.log("[NAVLOG] init navlog.js (Fix: Borders & No Total Text)");
         <col style="width:6%">
         <col style="width:6%">
         <col style="width:6%">
-        <col style="width:8%">
-        <col style="width:10%">
-        <col style="width:10%">
-      </colgroup>
+        <col style="width:8%"> <col style="width:10%"> <col style="width:10%"> </colgroup>
     `;
 
     let h = `<div class="nav-paper"><div class="nav-content">`;
@@ -263,7 +257,7 @@ console.log("[NAVLOG] init navlog.js (Fix: Borders & No Total Text)");
 
     h += `</tbody></table>`;
 
-    // --- Separate Total Table ---
+    // --- Separate Total Table (Empty Label) ---
     h += `<table class="total-table">`;
     h += colGroup;
     h += `<tr>
