@@ -1,21 +1,30 @@
 // static/js/map-core.js
-console.log("[MAP] init map-core.js (Git Base + Pick Link)");
+console.log("[MAP] init map-core.js (Restored UI)");
 
 (function () {
   const map = L.map("map", { zoomControl: false }).setView([36.0, 140.0], 7);
   window.navMap = map;
-  window.airportStations = [];
 
+  // 地図切り替え用ベースレイヤー
   const baseLayers = {
-    "標準地図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", { attribution: "GSI 標準地図" }),
-    "色別標高図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png", { attribution: "GSI 色別標高図" }),
-    "航空写真": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", { attribution: "GSI 航空写真" }),
-    "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" })
+    "標準地図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {
+      attribution: "GSI Tiles", maxZoom: 18
+    }),
+    "色別標高図": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png", {
+      attribution: "GSI Tiles", maxZoom: 18
+    }),
+    "航空写真": L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", {
+      attribution: "GSI Tiles", maxZoom: 18
+    }),
+    "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap"
+    })
   };
   baseLayers["標準地図"].addTo(map);
 
+  // レイヤーコントロール作成・登録
   const layersCtrl = L.control.layers(baseLayers, {}, { position: "topright", collapsed: false }).addTo(map);
-  window.navLayersControl = layersCtrl;
+  window.navLayersControl = layersCtrl; // 他のJSからアクセスできるように公開
 
   L.control.zoom({ position: "bottomright" }).addTo(map);
   L.control.scale({ position: "bottomleft", metric: true, imperial: false }).addTo(map);
@@ -25,172 +34,125 @@ console.log("[MAP] init map-core.js (Git Base + Pick Link)");
   const PATH_NAV = "/static/data/jp_nav.geojson";
   const PATH_HELI = "/static/data/jp_heliport.geojson";
 
-  // ★空域の色はGit元の「#555」を維持
   const styleAirspace = { color: "#555", weight: 1, fillOpacity: 0.1, dashArray: "4 4" };
   const styleAirport = { color: "#1565c0", weight: 1.2, fillOpacity: 0.8, fillColor: "#888" };
   const styleNavAid = { color: "#455a64", weight: 1, fillOpacity: 0 };
   const FLIGHT_COLORS = { "VFR": "#2e7d32", "MVFR": "#1565c0", "IFR": "#c62828", "LIFR": "#ad1457", "UNKNOWN": "#757575" };
 
-  async function addGeoJsonOverlay(url, opts) {
+  async function addGeoJsonOverlay(url, opts, name) {
     try {
-      const r = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const r = await fetch(url);
+      if (!r.ok) return null;
       const data = await r.json();
-      return L.geoJSON(data, opts);
+      const layer = L.geoJSON(data, opts);
+      layer.addTo(map);
+      if(name) layersCtrl.addOverlay(layer, name); // コントロールに追加
+      return layer;
     } catch (e) { return null; }
   }
 
   (async () => {
-    const fitGroup = L.featureGroup();
-
-    // 1. 空域 (ASP) - クリック連携を追加
-    const asp = await addGeoJsonOverlay(PATH_ASP, {
+    // 1. 空域
+    await addGeoJsonOverlay(PATH_ASP, {
       style: styleAirspace,
       onEachFeature: (f, layer) => {
         const p = f.properties || {};
-        const html = `<b>${p.name || "Airspace"}</b><br>${p.type || ""}`;
-        layer.bindPopup(html);
-
-        // ★追加: クリック時の処理
-        layer.on("click", (e) => {
-          if (window.routeMode === "pick") {
-            e.target.closePopup(); // ポップアップを出さない
-            L.DomEvent.stop(e);
-            if(typeof window.handlePointPick === 'function') {
-              window.handlePointPick([e.latlng.lat, e.latlng.lng], p.name || "Airspace");
-            }
-          }
-        });
-      },
-    });
-    if (asp) layersCtrl.addOverlay(asp, "空域（ASP）");
-
-    // 2. 空港 (APT) - weather-imc.jsとの兼ね合いを維持
-    const apt = await addGeoJsonOverlay(PATH_APT, {
-      style: styleAirport,
-      pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 5, color: "#fff", weight: 1, fillColor: "#888", fillOpacity: 0.8 }),
-      onEachFeature: setupStationFeature // 下で定義
-    });
-    if (apt) {
-      layersCtrl.addOverlay(apt, "空港（APT）");
-      apt.addTo(map);
-      fitGroup.addLayer(apt);
-      passStationsToImc(apt);
-    }
-
-    // 3. ヘリポート (HELI)
-    const heli = await addGeoJsonOverlay(PATH_HELI, {
-      style: styleAirport,
-      pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 6, color: "#fff", weight: 1.5, fillColor: FLIGHT_COLORS["UNKNOWN"], fillOpacity: 0.9 }),
-      onEachFeature: (f, layer) => {
-        setupStationFeature(f, layer); // クリック連携含む
-        const p = f.properties || {};
-        const icao = p.icaoCode || p.icao || p.ident || null;
-        if(icao && icao.length === 4) fetchHeliMetar(layer, icao, p);
-      }
-    });
-    if (heli) {
-      layersCtrl.addOverlay(heli, "ヘリポート");
-      heli.addTo(map);
-    }
-
-    // 4. 無線施設 (NAV)
-    const nav = await addGeoJsonOverlay(PATH_NAV, {
-      style: styleNavAid,
-      pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 3 }),
-      onEachFeature: (f, layer) => {
-        const p = f.properties || {};
-        layer.bindPopup(`<b>${p.name || p.ident || "NAV"}</b><br>${p.type || p.category || ""}`);
-        
-        // ★追加: クリック連携
+        layer.bindPopup(`<b>${p.name || "Airspace"}</b><br>${p.type || ""}`);
         layer.on("click", (e) => {
           if (window.routeMode === "pick") {
             e.target.closePopup();
             L.DomEvent.stop(e);
-            if(typeof window.handlePointPick === 'function') {
-              window.handlePointPick([e.latlng.lat, e.latlng.lng], p.ident || p.name || "NAV");
-            }
+            if(window.handlePointPick) window.handlePointPick(e.latlng, p.name || "Airspace");
           }
         });
       },
-    });
-    if (nav) layersCtrl.addOverlay(nav, "無線施設（NAV）");
+    }, "空域 (ASP)");
 
-    if (fitGroup.getLayers().length > 0) {
-      map.fitBounds(fitGroup.getBounds(), { padding: [20, 20] });
-    }
+    // 2. 空港 (METAR連携)
+    await addGeoJsonOverlay(PATH_APT, {
+      style: styleAirport,
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 5, color: "#fff", weight: 1, fillColor: "#888", fillOpacity: 0.8 }),
+      onEachFeature: setupStationFeature
+    }, "空港 (APT)");
+
+    // 3. ヘリポート
+    await addGeoJsonOverlay(PATH_HELI, {
+      style: styleAirport,
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 6, color: "#fff", weight: 1.5, fillColor: FLIGHT_COLORS["UNKNOWN"], fillOpacity: 0.9 }),
+      onEachFeature: (f, layer) => {
+        setupStationFeature(f, layer);
+        const p = f.properties || {};
+        const icao = p.icaoCode || p.icao || p.ident || null;
+        if(icao && icao.length === 4) fetchHeliMetar(layer, icao, p);
+      }
+    }, "ヘリポート");
+
+    // 4. NAV
+    await addGeoJsonOverlay(PATH_NAV, {
+      style: styleNavAid,
+      pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 3 }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties || {};
+        layer.bindPopup(`<b>${p.name || p.ident}</b>`);
+        layer.on("click", (e) => {
+          if (window.routeMode === "pick") {
+            e.target.closePopup();
+            L.DomEvent.stop(e);
+            if(window.handlePointPick) window.handlePointPick(e.latlng, p.ident || p.name);
+          }
+        });
+      },
+    }, "無線施設 (NAV)");
   })();
 
   function setupStationFeature(f, layer) {
     const p = f.properties || {};
-    const icao = p.icaoCode || p.icao || p.ident || p.station || p.code || null;
+    const icao = p.icaoCode || p.icao || p.ident || null;
     const name = p.name_ja || p.name || icao || "Unknown";
 
     layer.on("click", async (e) => {
-      // ★Pickモード判定を追加
       if (window.routeMode === "pick") {
         e.target.closePopup();
         L.DomEvent.stop(e);
-        if(typeof window.handlePointPick === 'function') {
-          window.handlePointPick([e.latlng.lat, e.latlng.lng], icao || name);
-        }
+        if (window.handlePointPick) window.handlePointPick(e.latlng, icao || name);
         return;
       }
-
-      // 通常時の処理 (Git元のまま)
       let html = `<b>${name}</b>`;
       if (icao) html += ` (${icao})`;
-      
-      if (icao && typeof window.avwxFetchMetar === "function") {
-        try {
-          layer.bindPopup(html + "<br>Loading METAR...").openPopup(e.latlng);
-          const metar = await window.avwxFetchMetar(icao);
-          const fr = (metar?.flight_rules || "").toUpperCase();
-          const raw = metar?.raw || "(No Raw Data)";
-          
-          let colorStr = "#000";
-          if(fr === "VFR") colorStr = "green";
-          else if(fr === "MVFR") colorStr = "blue";
-          else if(fr === "IFR") colorStr = "red";
-          else if(fr === "LIFR") colorStr = "purple";
 
-          html += `<br><span style="color:${colorStr};font-weight:bold;">${fr}</span>`;
-          html += `<br><pre style="margin:4px 0;white-space:pre-wrap;font-size:11px;">${raw}</pre>`;
-          layer.setPopupContent(html);
-        } catch (err) {
-          layer.setPopupContent(html + `<br><span style="color:red;font-size:11px;">METAR取得不可</span>`);
+      if (icao && typeof window.avwxFetchMetar === "function") {
+        layer.bindPopup(html + "<br>Loading METAR...").openPopup();
+        const data = await window.avwxFetchMetar(icao);
+        if (data) {
+          let colorStr = "#000";
+          if(data.flight_rules === "VFR") colorStr = "green";
+          else if(data.flight_rules === "MVFR") colorStr = "purple";
+          else if(data.flight_rules === "IFR" || data.flight_rules === "LIFR") colorStr = "red";
+
+          html += `<br><span style="color:${colorStr};font-weight:bold;">${data.flight_rules}</span>`;
+          html += `<br><div style="font-size:11px; margin-top:4px;">${data.raw}</div>`;
+          html += `<div style="font-size:10px; color:#666;">${data.time}</div>`;
+        } else {
+          html += `<br><span style="font-size:11px;color:gray">No Data</span>`;
         }
+        layer.setPopupContent(html);
       } else {
-        html += `<br><span style="color:#666;font-size:11px;">${p.municipality || ""}</span>`;
-        layer.bindPopup(html).openPopup(e.latlng);
+        html += `<br><span style="color:#666;">${p.municipality || ""}</span>`;
+        layer.bindPopup(html).openPopup();
       }
-      L.DomEvent.stop(e);
     });
   }
 
   async function fetchHeliMetar(layer, icao, props) {
     try {
-      const res = await fetch(`/api/metar?icao=${icao}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!data || data.error) return;
-      const rule = data.flight_rules || "UNKNOWN";
-      const color = FLIGHT_COLORS[rule] || FLIGHT_COLORS["UNKNOWN"];
-      layer.setStyle({ fillColor: color });
+      if(typeof window.avwxFetchMetar === "function") {
+        const data = await window.avwxFetchMetar(icao);
+        if (data) {
+          const rule = data.flight_rules || "UNKNOWN";
+          const color = FLIGHT_COLORS[rule] || FLIGHT_COLORS["UNKNOWN"];
+          layer.setStyle({ fillColor: color });
+        }
+      }
     } catch (e) {}
-  }
-
-  function passStationsToImc(layerGroup) {
-    const stations = (layerGroup.toGeoJSON().features || []).map((ft) => {
-      const p = ft.properties || {};
-      const icao = p.icaoCode || p.icao || p.ident || p.station || p.code || null;
-      const c = ft.geometry?.coordinates;
-      if (!icao || !c || c.length < 2) return null;
-      return { icao: String(icao).trim().toUpperCase(), lat: c[1], lon: c[0] };
-    }).filter(Boolean);
-    window.airportStations = stations;
-    if (typeof window.setAirportStationsForImc === "function") {
-      window.setAirportStationsForImc(stations);
-    }
   }
 })();

@@ -1,135 +1,112 @@
 // static/js/weather-imc.js
-console.log("[IMC] init weather-imc.js (Mesh Colors & Legend)");
+console.log("[IMC] init weather-imc.js (Overlay integrated)");
 
 (function() {
   const map = window.navMap;
   if (!map) return;
 
-  // フライトカテゴリー判定
-  function getFlightCategory(ceil, vis) {
-    if (ceil < 500 || vis < 1600) return 'LIFR';
-    if (ceil < 1000 || vis < 5000) return 'IFR';
-    if (ceil <= 3000 || vis <= 8000) return 'MVFR';
-    return 'VFR';
-  }
-
-  // ★メッシュの色設定（指示通り：IMC=赤, MVFR=紫）
-  function getMeshColor(cat) {
-    switch (cat) {
-      case 'LIFR': return '#FF0000'; // IMC (Red)
-      case 'IFR':  return '#FF0000'; // IMC (Red)
-      case 'MVFR': return '#800080'; // MVFR (Purple)
-      default:     return null;      // VFR等は塗らない
-    }
-  }
-
-  const markerGroup = L.layerGroup().addTo(map); // 空港アイコン用
-  const meshGroup = L.layerGroup().addTo(map);   // メッシュ用
-  const AIRPORTS_JSON = "/static/data/jp_apt.geojson";
-  
-  // 1. 空港マーカーの描画（色分けなし・グレー固定）
-  fetch(AIRPORTS_JSON)
-    .then(r => r.json())
-    .then(data => {
-      data.features.forEach(f => {
-        const lat = f.geometry.coordinates[1];
-        const lon = f.geometry.coordinates[0];
-        const props = f.properties;
-
-        // 常にグレーで描画
-        const m = L.circleMarker([lat, lon], {
-          radius: 5,
-          fillColor: '#808080', 
-          color: "#000",
-          weight: 1,
-          opacity: 1,
-          fillOpacity: 0.8
-        });
-
-        m.icao = props.icao; // データを保持（メッシュ描画用）
-        m.bindPopup(`<strong>${props.icao || ""} / ${props.name}</strong>`);
-
-        // クリック時の地点登録連携
-        m.on('click', (e) => {
-          if (window.routeMode === 'pick' && typeof window.handlePointPick === 'function') {
-            e.target.closePopup();
-            L.DomEvent.stop(e);
-            window.handlePointPick([lat, lon], props.icao || props.name || "Airport");
-          }
-        });
-
-        markerGroup.addLayer(m);
-      });
-
-      // マーカー描画後にメッシュを描画
-      updateImcMesh();
-    })
-    .catch(e => console.error("Apt load fail", e));
-
-  // 2. メッシュの描画（空港アイコンの色は変えずに、周囲に矩形を描く）
-  async function updateImcMesh() {
-    meshGroup.clearLayers();
-
-    // 各空港マーカーの位置を基準にメッシュを描く
-    markerGroup.eachLayer(async (layer) => {
-      const icao = layer.icao;
-      if (!icao) return;
-
-      try {
-        // バックエンドからMETAR取得
-        const res = await fetch(`/api/metar?icao=${icao}`);
-        if (!res.ok) return;
-        const metar = await res.json();
-        if (!metar.raw_text) return;
-
+  // 1. グローバルMETAR取得関数
+  window.avwxFetchMetar = async function(icao) {
+    if (!icao) return null;
+    try {
+      const res = await fetch(`/api/metar?icao=${icao}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      
+      if (data.raw_text) {
+        let rule = "VFR";
         let ceiling = 99999;
-        if (metar.clouds) {
-            const cigs = metar.clouds
-                .filter(c => c.cover === 'BKN' || c.cover === 'OVC')
-                .map(c => c.base);
-            if (cigs.length > 0) ceiling = Math.min(...cigs);
-        }
         let vis = 99999;
-        if (metar.visibility && metar.visibility.meters) {
-            vis = metar.visibility.meters;
+
+        if (data.clouds) {
+          const cigs = data.clouds
+            .filter(c => c.cover === 'BKN' || c.cover === 'OVC')
+            .map(c => c.base);
+          if (cigs.length > 0) ceiling = Math.min(...cigs);
+        }
+        if (data.visibility && data.visibility.meters) {
+          vis = parseFloat(data.visibility.meters);
         }
 
-        const cat = getFlightCategory(ceiling, vis);
-        const color = getMeshColor(cat);
+        if (ceiling < 500 || vis < 1600) rule = "LIFR";
+        else if (ceiling < 1000 || vis < 5000) rule = "IFR";
+        else if (ceiling <= 3000 || vis <= 8000) rule = "MVFR";
 
-        // IMCまたはMVFRの場合のみメッシュ（矩形）を描画
-        if (color) {
-          const lat = layer.getLatLng().lat;
-          const lon = layer.getLatLng().lng;
-          const size = 0.1; // メッシュサイズ（度）
-          
-          L.rectangle(
-            [[lat - size, lon - size], [lat + size, lon + size]],
-            { color: color, weight: 0, fillOpacity: 0.3 }
-          ).addTo(meshGroup);
-        }
+        return {
+          flight_rules: rule,
+          raw: data.raw_text,
+          time: data.observation_time
+        };
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  };
 
-        // ※空港アイコン自体の色は変更しない
+  // 2. メッシュレイヤー作成
+  const meshGroup = L.layerGroup();
+  
+  // デフォルトで地図に追加（表示状態にする）
+  meshGroup.addTo(map);
 
-      } catch (e) { }
-    });
+  // ★重要: 地図右上のレイヤーコントロールに「気象情報」として追加
+  // map-core.js で window.navLayersControl が作られている前提
+  // 少し遅延させて、map-core.jsの処理完了を待つと確実です
+  setTimeout(() => {
+    if (window.navLayersControl) {
+      window.navLayersControl.addOverlay(meshGroup, "気象情報 (IMC/MVFR)");
+    }
+  }, 500);
+
+  const AIRPORTS_JSON = "/static/data/jp_apt.geojson";
+
+  function getMeshColor(rule) {
+    if (rule === "LIFR" || rule === "IFR") return "#FF0000"; 
+    if (rule === "MVFR") return "#800080"; 
+    return null;
   }
 
-  // 3. 地図の片隅に凡例を追加 (Leaflet Control)
-  const legend = L.control({ position: 'bottomright' });
+  async function updateMeshes() {
+    try {
+      const res = await fetch(AIRPORTS_JSON);
+      const data = await res.json();
+      meshGroup.clearLayers();
 
+      for (const f of data.features) {
+        const icao = f.properties.icao;
+        if (!icao) continue;
+
+        const metar = await window.avwxFetchMetar(icao);
+        if (metar) {
+          const color = getMeshColor(metar.flight_rules);
+          if (color) {
+            const lat = f.geometry.coordinates[1];
+            const lon = f.geometry.coordinates[0];
+            
+            L.rectangle(
+              [[lat - 0.08, lon - 0.08], [lat + 0.08, lon + 0.08]],
+              { color: color, weight: 0, fillOpacity: 0.35, stroke: false }
+            ).addTo(meshGroup);
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  updateMeshes();
+  setInterval(updateMeshes, 300000);
+
+  // 3. 地図上の凡例
+  const legend = L.control({ position: 'bottomright' });
   legend.onAdd = function (map) {
-    const div = L.DomUtil.create('div', 'info legend map-legend');
+    const div = L.DomUtil.create('div', 'map-legend');
     div.innerHTML = `
-      <div style="font-weight:bold; margin-bottom:5px;">METAR</div>
-      <div class="legend-item"><i style="background:#FF0000"></i> IMC</div>
-      <div class="legend-item"><i style="background:#800080"></i> MVFR</div>
+      <div style="font-weight:bold; border-bottom:1px solid #ccc; margin-bottom:4px;">Weather</div>
+      <div><i style="background:#FF0000"></i> IMC</div>
+      <div><i style="background:#800080"></i> MVFR</div>
     `;
     return div;
   };
-
   legend.addTo(map);
-
-  // 定期更新
-  setInterval(updateImcMesh, 300000);
 })();
