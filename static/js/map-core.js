@@ -1,10 +1,8 @@
-console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
+console.log("[MAP] init map-core.js (Radar Fixed, Coverage Removed)");
 
 (function () {
   // 1. 地図初期化
   const map = L.map("map", { zoomControl: false }).setView([36.0, 140.0], 7);
-  
-  // camera-layer.js 等から参照できるように公開
   window.navMap = map;
 
   // 2. ベースレイヤー
@@ -16,7 +14,6 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
   };
   baseLayers["標準地図"].addTo(map);
 
-  // 3. レイヤーコントロール
   const layersCtrl = L.control.layers(baseLayers, {}, { position: "topright", collapsed: false }).addTo(map);
   window.navLayersControl = layersCtrl;
 
@@ -45,19 +42,25 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
     } catch (e) { return null; }
   }
 
-  // ★Codex版 RainViewer実装 (tilecacheドメイン使用)
+  // ★ RainViewer (Direct Access: Fixed)
   async function setupRainViewerLayer() {
-    // 重要: tile.cache ではなく tilecache を使用
+    // 観測範囲(Coverage)レイヤーは削除しました
+
+    // NEXRAD配色(6) + スムージング(1_1)
     const buildRadarUrl = (frameTime) =>
-      `https://tilecache.rainviewer.com/v2/radar/${frameTime}/256/{z}/{x}/{y}/2/1_1.png`;
+      `https://tilecache.rainviewer.com/v2/radar/${frameTime}/256/{z}/{x}/{y}/6/1_1.png`;
 
     const fetchLatestFrame = async () => {
       try {
-        const response = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+        // 時刻情報の取得にはプロキシを使う（CORS回避のため）
+        // もしプロキシが動かない場合は直接アクセスを試みる
+        let response = await fetch("/api/rainviewer/info");
+        if (!response.ok) {
+             response = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+        }
         if (!response.ok) return null;
-        const data = await response.json();
         
-        // 過去データ(past) または 予報(nowcast) の最新を取得
+        const data = await response.json();
         const radar = (data && data.radar) || {};
         const frames = (radar.nowcast && radar.nowcast.length > 0) ? radar.nowcast : radar.past || [];
         
@@ -76,17 +79,17 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
       if (!currentTime) return;
 
       const radarLayer = L.tileLayer(buildRadarUrl(currentTime), {
-        opacity: 0.6,
+        opacity: 0.8,
+        maxNativeZoom: 12, // 拡大時に消えないよう設定
         maxZoom: 18,
         attribution: "RainViewer",
+        zIndex: 2000
       });
       
-      // デフォルトでON
       radarLayer.addTo(map);
       layersCtrl.addOverlay(radarLayer, "雨雲レーダー (RainViewer)");
       window.rainviewerLayer = radarLayer;
 
-      // 5分ごとに更新
       const refresh = async () => {
         const nextTime = await fetchLatestFrame();
         if (nextTime && nextTime !== currentTime) {
@@ -96,16 +99,15 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
         }
       };
       window.rainviewerRefresh = refresh;
-      setInterval(refresh, 5 * 60 * 1000);
+      setInterval(refresh, 5 * 60 * 1000); // 5分更新
       
     } catch (e) {
       console.warn("[MAP] RainViewer layer load failed", e);
     }
   }
 
-  // 初期化実行
   (async () => {
-    // 1. レーダー読み込み
+    // 1. レーダー
     await setupRainViewerLayer();
 
     // 2. 空域
@@ -124,7 +126,7 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
       },
     }, "空域 (ASP)");
 
-    // 3. 空港 (METAR連携 + 風Log)
+    // 3. 空港
     await addGeoJsonOverlay(PATH_APT, {
       style: styleAirport,
       pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 5, color: "#fff", weight: 1, fillColor: "#888", fillOpacity: 0.8 }),
@@ -143,7 +145,7 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
       }
     }, "ヘリポート");
 
-    // 5. NAV (風Log)
+    // 5. NAV
     await addGeoJsonOverlay(PATH_NAV, {
       style: styleNavAid,
       pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 3 }),
@@ -156,7 +158,7 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
           } else {
             L.popup().setLatLng(e.latlng).setContent(`<b>${p.name || p.ident}</b>`).openOn(map);
           }
-          // 風ログ取得 (クリック時)
+          // 風ログ取得
           const name = p.ident || p.name || "NAV";
           fetchWindLog(e.latlng.lat, e.latlng.lng, name);
         });
@@ -165,7 +167,6 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
   })();
 
   // --- 共通関数 ---
-
   async function fetchWindLog(lat, lon, name) {
     try {
       const r = await fetch("/api/gfs_wind", {
@@ -198,7 +199,6 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
         return;
       }
 
-      // 風ログ取得
       fetchWindLog(e.latlng.lat, e.latlng.lng, icao || name);
 
       let html = `<b>${name}</b>`;
@@ -215,7 +215,6 @@ console.log("[MAP] init map-core.js (RainViewer Fix + WindLog)");
           if(fr === "VFR") colorStr = "green";
           else if(fr === "MVFR") colorStr = "purple";
           else if(fr === "IFR" || fr === "LIFR") colorStr = "red";
-
           let newHtml = `<b>${name}</b> (${icao})<br>`;
           newHtml += `<span style="color:${colorStr};font-weight:bold;">${fr}</span>`;
           newHtml += `<br><pre style="margin:4px 0;white-space:pre-wrap;font-size:11px;">${data.raw}</pre>`;

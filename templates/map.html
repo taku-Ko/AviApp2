@@ -11,6 +11,10 @@
   <div id="container">
     <div id="map"></div>
     <div id="sidebar">
+      <div id="tabs">
+        <button class="tab-btn" onclick="window.showTab('results')">計算結果</button>
+      </div>
+
       <div id="inputTab">
         <div class="mode-switch">
           <button id="mode-text" class="active" onclick="window.setRouteMode('text')">地名入力</button>
@@ -51,6 +55,14 @@
         <div class="input-group">
           <label>巡航高度 (ft)：</label>
           <input type="number" id="alt" value="3000" min="0" step="500">
+        </div>
+        <div class="input-group">
+          <label>外気温 (OAT, ℃)：</label>
+          <input type="number" id="oat" placeholder="例：15" step="1">
+        </div>
+        <div class="input-group">
+          <label>計器速度 (IAS, kt)：</label>
+          <input type="number" id="ias" placeholder="例：110" min="0" step="1">
         </div>
         <div class="input-group">
           <label>出発予定時刻 (ETD)：</label>

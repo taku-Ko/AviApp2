@@ -1,11 +1,14 @@
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 import requests
+import datetime
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
-# 環境変数設定
-LOCAL_AVWX_TOKEN = ""
+LOCAL_AVWX_TOKEN = "" 
 AVWX_TOKEN = os.environ.get("AVWX_TOKEN", LOCAL_AVWX_TOKEN).strip()
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -17,6 +20,32 @@ def index():
 def credits():
     return render_template("credits.html")
 
+# RainViewer Proxy
+@app.route("/api/rainviewer/info")
+def api_rainviewer_info():
+    url = "https://api.rainviewer.com/public/weather-maps.json"
+    try:
+        r = requests.get(url, timeout=10, verify=False)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/rainviewer/tile/<ts>/<z>/<x>/<y>.png")
+def api_rainviewer_tile(ts, z, x, y):
+    try:
+        if ts == 'coverage':
+            url = f"https://tile.cache.rainviewer.com/v2/coverage/0/256/{z}/{x}/{y}.png"
+        else:
+            url = f"https://tile.cache.rainviewer.com/v2/radar/{ts}/256/2/1_1/{z}/{x}/{y}.png"
+        r = requests.get(url, timeout=10, verify=False)
+        if r.status_code == 200:
+            return Response(r.content, mimetype="image/png")
+        else:
+            return Response("Tile fetch failed", status=404)
+    except Exception as e:
+        return Response(str(e), status=500)
+
+# METAR & GFS Wind
 @app.route("/api/metar")
 def api_metar():
     icao = (request.args.get("icao") or "").strip().upper()
@@ -28,15 +57,13 @@ def api_metar():
         r = requests.get(url, headers=headers, params={"format": "json", "onfail": "cache"}, timeout=10)
         if r.status_code == 404: return jsonify({"error": "Not Found"}), 404
         return jsonify(r.json())
-    except Exception as e: return jsonify({"error": str(e)}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
 
-# 風情報API (重要)
 def alt_ft_to_level(alt_ft: float) -> str:
     if alt_ft is None: alt_ft = 3000.0
-    try:
-        alt_ft = float(alt_ft)
-    except ValueError:
-        alt_ft = 3000.0
+    try: alt_ft = float(alt_ft)
+    except ValueError: alt_ft = 3000.0
     table = [
         (1500, "975hPa"), (3500, "925hPa"), (6000, "850hPa"), (10000, "700hPa"),
         (14000, "600hPa"), (18000, "500hPa"), (24000, "400hPa"), (30000, "300hPa"),
@@ -52,32 +79,25 @@ def api_gfs_wind():
     points = payload.get("points") or []
     alt_ft = payload.get("alt_ft", 3000)
     if not points: return jsonify({"error": "points required"}), 400
-
     level = alt_ft_to_level(alt_ft)
     var_speed = f"wind_speed_{level}"
     var_dir = f"wind_direction_{level}"
     lats = [str(float(p["lat"])) for p in points if "lat" in p]
     lons = [str(float(p["lon"])) for p in points if "lon" in p]
     if not lats: return jsonify({"error": "invalid coords"}), 400
-
     params = {
-        "latitude": ",".join(lats),
-        "longitude": ",".join(lons),
+        "latitude": ",".join(lats), "longitude": ",".join(lons),
         "hourly": f"{var_speed},{var_dir}",
-        "windspeed_unit": "kn",
-        "models": "gfs_seamless",
-        "forecast_days": 1,
-        "timezone": "UTC",
+        "windspeed_unit": "kn", "models": "gfs_seamless",
+        "forecast_days": 1, "timezone": "UTC",
     }
     try:
-        r = requests.get(OPEN_METEO_URL, params=params, timeout=10)
+        r = requests.get(OPEN_METEO_URL, params=params, timeout=10, verify=False)
         r.raise_for_status()
         js = r.json()
     except Exception as e: return jsonify({"error": str(e)}), 502
-
     if isinstance(js, list): locations = js
     else: locations = [js]
-
     out_points = []
     for idx, loc in enumerate(locations):
         hourly = (loc or {}).get("hourly") or {}
@@ -85,13 +105,13 @@ def api_gfs_wind():
         dir_arr = hourly.get(var_dir) or []
         if not spd_arr or not dir_arr: continue
         if idx >= len(points): continue
-        out_points.append({
-            "id": points[idx].get("id", idx),
-            "lat": points[idx].get("lat"),
-            "lon": points[idx].get("lon"),
-            "wind_spd": float(spd_arr[0]),
-            "wind_dir": float(dir_arr[0]),
-        })
+        try:
+            out_points.append({
+                "id": points[idx].get("id", idx),
+                "lat": points[idx].get("lat"), "lon": points[idx].get("lon"),
+                "wind_spd": float(spd_arr[0]), "wind_dir": float(dir_arr[0]),
+            })
+        except: continue
     return jsonify({"level": level, "points": out_points})
 
 if __name__ == "__main__":
