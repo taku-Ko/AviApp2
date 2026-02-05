@@ -1,6 +1,7 @@
-console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
+console.log("[NAVLOG] init navlog.js (Variation from File 000237031.txt)");
 
 (function() {
+  // --- 共通計算関数 ---
   function toRad(d) { return d * Math.PI / 180; }
   function toDeg(r) { return r * 180 / Math.PI; }
 
@@ -23,29 +24,88 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
   }
 
+  // --- 偏差データ読み込み機能 ---
+  let variationData = null;
+
+  async function loadVariationData() {
+    try {
+      const response = await fetch("/static/data/000237031.txt");
+      if (!response.ok) throw new Error("Variation file not found");
+      const text = await response.text();
+      const lines = text.split('\n');
+      const data = [];
+      
+      // フォーマット例: 45.5417  148.9375   8°30′  684827
+      // 緯度 経度 度°分′
+      const regex = /([0-9.]+)\s+([0-9.]+)\s+(\d+)°(\d+)′/;
+
+      lines.forEach(line => {
+        const match = line.match(regex);
+        if (match) {
+          const lat = parseFloat(match[1]);
+          const lon = parseFloat(match[2]);
+          const deg = parseInt(match[3], 10);
+          const min = parseInt(match[4], 10);
+          // 日本国内の磁気偏角は「西偏」なのでマイナスとして扱う
+          const val = -(deg + min / 60.0);
+          data.push({ lat, lon, val });
+        }
+      });
+      variationData = data;
+      console.log(`[NAVLOG] Loaded ${data.length} variation points from file.`);
+    } catch (e) {
+      console.error("[NAVLOG] Failed to load variation data:", e);
+    }
+  }
+  // 初期化時に読み込み開始
+  loadVariationData();
+
   async function getVariation(lat, lon) {
-    return -(7 + (lat - 35)*0.5 + (lon - 135)*0.3);
+    // データ未読み込み（または読み込み中）なら簡易計算で代用
+    if (!variationData || variationData.length === 0) {
+      console.warn("Variation data not ready, using fallback approximation.");
+      return -(7 + (lat - 35)*0.5 + (lon - 135)*0.3);
+    }
+
+    // 最寄り点探索 (Nearest Neighbor)
+    let minDistSq = Infinity;
+    let closestVal = -7.0;
+
+    // データ点数は数千程度なので全探索でも高速
+    for (const p of variationData) {
+      const dLat = p.lat - lat;
+      const dLon = p.lon - lon;
+      const distSq = dLat * dLat + dLon * dLon;
+      if (distSq < minDistSq) {
+        minDistSq = distSq;
+        closestVal = p.val;
+      }
+    }
+    return closestVal;
   }
 
+  // --- 風力三角形計算 ---
   function solveWind(tc, tas, windDir, windSpd) {
     const rTC = toRad(tc);
+    // 風向(from)から風下へのベクトル計算
     const wa = toRad(windDir - tc);
-    const xwind = windSpd * Math.sin(wa);
-    const hwind = windSpd * Math.cos(wa);
+    const xwind = windSpd * Math.sin(wa); // 横風成分
+    const hwind = windSpd * Math.cos(wa); // 向かい風成分
     
+    // WCA (Wind Correction Angle)
     let wcaRad = Math.asin(xwind / tas);
     let wca = toDeg(wcaRad);
+    // GS (Ground Speed)
     let gs = tas * Math.cos(wcaRad) - hwind;
     
     return { wca, gs };
   }
 
-  window.generateNavLogHtml = function(legs, startFuel) { return ""; }
-
+  // --- NavLog生成メイン処理 ---
   window.showNavLog = async function(points, TAS) {
     if (points.length < 2) return; 
 
-    // 入力取得
+    // 入力値取得
     const tasInput = parseFloat(document.getElementById("tas").value);
     const altInput = parseFloat(document.getElementById("alt").value);
     const oatInput = parseFloat(document.getElementById("oat")?.value);
@@ -63,12 +123,16 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
       minTime = +t[0]*60 + (+t[1]);
     }
 
+    // レグ情報計算 (VARはファイルから取得)
     const legs = [];
     for(let i=0; i<points.length-1; i++){
       const A = points[i].latlng;
       const B = points[i+1].latlng;
-      const mid = [(A[0]+B[0])/2, (A[1]+B[1])/2];
+      const mid = [(A[0]+B[0])/2, (A[1]+B[1])/2]; // 中間点
+      
+      // ここでファイルデータに基づく偏差を取得
       const V = await getVariation(mid[0], mid[1]);
+      
       legs.push({
         toName: points[i+1].name,
         dist: calcDist(A, B),
@@ -78,7 +142,7 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
       });
     }
 
-    // 風取得
+    // GFS風情報API呼び出し
     const windPoints = legs.map((l, i) => ({ id: i, lat: l.mid[0], lon: l.mid[1] }));
     let winds = {};
     try {
@@ -95,6 +159,7 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
       }
     } catch(e) { console.error(e); }
 
+    // 航法計算実行
     let computed = [];
     let totalDist = 0;
     let totalTime = 0;
@@ -108,7 +173,7 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
       
       const WCA = sol.wca;
       const TH = l.TC + WCA;
-      const MH = TH + l.VAR;
+      const MH = TH + l.VAR; // 西偏はマイナスなのでそのまま足す
       const CH = MH + devVal;
       const GS = sol.gs;
       
@@ -137,6 +202,7 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
       });
     });
 
+    // --- HTML生成 ---
     function td(content, rowSpan=1, colSpan=1, className="") {
       const rs = rowSpan > 1 ? `rowspan="${rowSpan}"` : "";
       const cs = colSpan > 1 ? `colspan="${colSpan}"` : "";
@@ -144,15 +210,20 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
       const cls = `${className} editable`.trim();
       return `<td class="${cls}" ${rs} ${cs} ${ed}>${content}</td>`;
     }
+    // 偏差表示フォーマット (マイナスならW、プラスならE)
     function fmtVar(v) {
       if(v===0) return '0°';
-      const d = v<0 ? "W" : "E";
+      const d = v<0 ? "W" : "E"; 
       return `${Math.round(Math.abs(v))}°${d}`;
     }
 
-    // ★修正箇所: 右端の余白(8% + 8% = 16%)を確保するため、他の列幅を調整
+    // 列幅設定 (右余白確保版)
     const colGroup = `
-      <col style="width:13%"> <col style="width:6%"> <col style="width:6%"> <col style="width:6%"> <col style="width:6%"> <col style="width:6%"> <col style="width:6%"> <col style="width:7%"> <col style="width:7%"> <col style="width:7%"> <col style="width:7%"> <col style="width:7%"> <col style="width:8%"> <col style="width:8%"> `;
+      <col style="width:13%">
+      <col style="width:6%"> <col style="width:6%"> <col style="width:6%"> <col style="width:6%">
+      <col style="width:6%"> <col style="width:6%"> <col style="width:7%"> <col style="width:7%">
+      <col style="width:7%"> <col style="width:7%"> <col style="width:7%">
+      <col style="width:8%"> <col style="width:8%"> `;
 
     let h = `
     <div class="nav-paper"><div class="nav-content">
@@ -218,7 +289,7 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
       h += `<tr>`;
       h += td(c.ws!=null?Math.round(c.ws):"");
       h += td(Math.round(c.WCA));
-      h += td(fmtVar(c.VAR));
+      h += td(fmtVar(c.VAR)); // ここでファイルから取得した正確な偏差を表示
       h += td(c.DEV);
       h += td(c.cumDist.toFixed(0), 1, 1, "sub-val");
       h += td(c.cumTime.toFixed(0), 1, 1, "sub-val");
@@ -250,6 +321,7 @@ console.log("[NAVLOG] init navlog.js (Right Margin Restored)");
     const rF = Math.max(0, totalFuel - fF - gF);
     const tF = totalFuel;
 
+    // フッター (左寄せ)
     h += `<div class="nav-footer">
       <div class="footer-stack">
         <div class="param-box">
