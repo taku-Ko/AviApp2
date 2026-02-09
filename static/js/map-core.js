@@ -1,4 +1,4 @@
-console.log("[MAP] init map-core.js (Radar Fixed, Coverage Removed)");
+console.log("[MAP] init map-core.js (Radar Name Fixed)");
 
 (function () {
   // 1. 地図初期化
@@ -42,18 +42,13 @@ console.log("[MAP] init map-core.js (Radar Fixed, Coverage Removed)");
     } catch (e) { return null; }
   }
 
-  // ★ RainViewer (Direct Access: Fixed)
+  // ★ RainViewer
   async function setupRainViewerLayer() {
-    // 観測範囲(Coverage)レイヤーは削除しました
-
-    // NEXRAD配色(6) + スムージング(1_1)
     const buildRadarUrl = (frameTime) =>
       `https://tilecache.rainviewer.com/v2/radar/${frameTime}/256/{z}/{x}/{y}/6/1_1.png`;
 
     const fetchLatestFrame = async () => {
       try {
-        // 時刻情報の取得にはプロキシを使う（CORS回避のため）
-        // もしプロキシが動かない場合は直接アクセスを試みる
         let response = await fetch("/api/rainviewer/info");
         if (!response.ok) {
              response = await fetch("https://api.rainviewer.com/public/weather-maps.json");
@@ -80,14 +75,16 @@ console.log("[MAP] init map-core.js (Radar Fixed, Coverage Removed)");
 
       const radarLayer = L.tileLayer(buildRadarUrl(currentTime), {
         opacity: 0.8,
-        maxNativeZoom: 12, // 拡大時に消えないよう設定
+        maxNativeZoom: 12,
         maxZoom: 18,
         attribution: "RainViewer",
         zIndex: 2000
       });
       
       radarLayer.addTo(map);
-      layersCtrl.addOverlay(radarLayer, "雨雲レーダー (RainViewer)");
+      
+      // ★修正: 名称をシンプルに変更
+      layersCtrl.addOverlay(radarLayer, "雨雲レーダー"); 
       window.rainviewerLayer = radarLayer;
 
       const refresh = async () => {
@@ -99,7 +96,7 @@ console.log("[MAP] init map-core.js (Radar Fixed, Coverage Removed)");
         }
       };
       window.rainviewerRefresh = refresh;
-      setInterval(refresh, 5 * 60 * 1000); // 5分更新
+      setInterval(refresh, 5 * 60 * 1000);
       
     } catch (e) {
       console.warn("[MAP] RainViewer layer load failed", e);

@@ -1,12 +1,12 @@
 // static/js/camera-layer.js
-console.log("[CAM] init camera-layer.js");
+console.log("[CAM] init camera-layer.js (Merged)");
 
 (function () {
   // -------------------------------------------------
-  // カメラ定義（ご提示のデータ）
+  // カメラ定義
   // -------------------------------------------------
   const cameras = [
-    // --- 霞ヶ浦（北浦 / 西浦）系 ---
+    
     {
       id: "kasumigaura-jingu",
       name: "霞ヶ浦 北浦：神宮橋",
@@ -17,15 +17,6 @@ console.log("[CAM] init camera-layer.js");
       imageUrl: "https://www.ktr.mlit.go.jp/river/cctv/C03145.jpg"
     },
     {
-      id: "kasumigaura-oyama",
-      name: "霞ヶ浦 西浦：大山(下)",
-      note: "茨城県稲敷郡美浦村大山（右岸27.4k）",
-      lat: 36.009345,
-      lng: 140.372863,
-      bearing: 290,
-      imageUrl: "https://www.ktr.mlit.go.jp/river/cctv/C03161.jpg"
-    },
-    {
       id: "kasumigaura-asao",
       name: "霞ヶ浦 西浦：麻生沖",
       note: "茨城県行方市麻生沖（湖上）",
@@ -33,26 +24,6 @@ console.log("[CAM] init camera-layer.js");
       lng: 140.488645,
       bearing: 100,
       imageUrl: "https://www.ktr.mlit.go.jp/river/cctv/C03120.jpg"
-    },
-
-    // --- 荒川・高麗川・入間川系 ---
-    {
-      id: "arakawa-minamihata",
-      name: "荒川：南畑水質観測所",
-      note: "埼玉県富士見市南畑新田",
-      lat: 35.86310,
-      lng: 139.57791,
-      bearing: 90,
-      imageUrl: "https://www.ktr.mlit.go.jp/arajo/realtime/cam/cam01.jpg"
-    },
-    {
-      id: "komagawa-koma",
-      name: "高麗川：高麗川橋",
-      note: "埼玉県坂戸市中里",
-      lat: 35.961407,
-      lng: 139.381936,
-      bearing: 90,
-      imageUrl: "https://www.ktr.mlit.go.jp/arajo/realtime/cam/cam27.jpg"
     },
     {
       id: "arakawa-kawagoe-line",
@@ -63,17 +34,6 @@ console.log("[CAM] init camera-layer.js");
       bearing: 100,
       imageUrl: "https://www.ktr.mlit.go.jp/arajo/realtime/cam/cam03.jpg"
     },
-    {
-      id: "iruma-ohashi",
-      name: "入間川：入間大橋",
-      note: "埼玉県川越市中老袋",
-      lat: 35.942889,
-      lng: 139.533654,
-      bearing: 170,
-      imageUrl: "https://www.ktr.mlit.go.jp/arajo/realtime/cam/cam09.jpg"
-    },
-
-    // --- 江戸川河川事務所エリア ---
     {
       id: "sekijuku-jo",
       name: "江戸川：関宿城",
@@ -101,13 +61,59 @@ console.log("[CAM] init camera-layer.js");
       lat: 36.10704,
       lng: 139.99879,
       bearing: 90,
-      imageUrl: "https://www.ktr.mlit.go.jp/shimodate/livecamera/campicture/06_A.jpg?1766482193175"
-    }
+      imageUrl: "https://www.ktr.mlit.go.jp/shimodate/livecamera/campicture/06_A.jpg"
+    },
+    {
+      id: "r17-shinpuni",
+      name: "R17 新三国トンネル新潟県側",
+      note: "新潟県南魚沼郡湯沢町三国（立岩橋）",
+      lat: 36.837,
+      lng: 138.805,
+      bearing: 160, 
+      imageUrl: "https://www.ktr.mlit.go.jp/river/cctv/C01926.jpg"
+    },
+    {
+      id: "r1-hakone-ibaragadaira",
+      name: "R1 箱根 茨ヶ平",
+      note: "箱根峠〜三島",
+      lat: 35.158,
+      lng: 139.006,
+      bearing: 220, 
+      imageUrl: "https://www.cbr.mlit.go.jp/numazu/kanogawa/cctv/snapshot/302.jpg"
+    },
+    {
+      id: "r18-usui-karuizawa",
+      name: "R18 碓氷バイパス 軽井沢橋",
+      note: "長野県北佐久郡軽井沢町",
+      lat: 36.329,
+      lng: 138.647,
+      bearing: 70, 
+      imageUrl: "https://www.ktr.mlit.go.jp/river/cctv/C02000.jpg"
+    },
+    // --- 追加分 (夜叉神峠) ---
+    {
+      id: "yashajin-pass",
+      name: "夜叉神峠 南アルプスライブカメラ",
+      note: "山梨県南アルプス市芦安芦倉",
+      lat: 35.6315,
+      lng: 138.3585,
+      bearing: 270, // 西向き（白峰三山方面）と推測
+      imageUrl: "https://www.minamialps-net.jp/wp-content/themes/malps2019/images/top/Yashajin.jpg"
+    },// --- 追加分 (大垂水峠) ---
+    {
+      id: "r20-otarumi",
+      name: "R20 大垂水峠",
+      note: "東京都八王子市〜神奈川県相模原市",
+      lat: 35.623,
+      lng: 139.273,
+      bearing: 270, // 西向き（峠方向）と推測
+      imageUrl: "http://www.ktr.mlit.go.jp/river/cctv/C01671.jpg"
+    },
   ];
 
   // 安全に初期化する関数
   function initCamera() {
-    // 地図(navMap)の準備を待機（これがエラー回避の鍵です）
+    // 地図(navMap)の準備を待機
     if (typeof window.navMap === "undefined") {
       setTimeout(initCamera, 500);
       return;
@@ -117,58 +123,67 @@ console.log("[CAM] init camera-layer.js");
     const layersControl = window.navLayersControl;
     const TAB_WIDTH = 320;
     const TAB_HEIGHT = 240;
+    
+    // アイコン作成用の共通関数
+    function createArrowIcon(rotation) {
+        const arrowHtml = `
+            <div style="
+            width: 0; 
+            height: 0; 
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 16px solid black; 
+            transform: rotate(${rotation}deg);
+            transform-origin: center center;
+            opacity: 0.9;
+            filter: drop-shadow(0px 0px 2px rgba(255,255,255,1));
+            "></div>
+        `;
+        return L.divIcon({
+            className: "camera-arrow-icon",
+            html: arrowHtml,
+            iconSize: [12, 16],
+            iconAnchor: [6, 8],
+        });
+    }
 
-    const markers = cameras.map((cam) => {
+    const markers = [];
+    
+    cameras.forEach((cam) => {
       // 矢印の回転角度 (0=北)
       const rotation = cam.bearing || 0;
-
-      // CSSで二等辺三角形（黒矢印）を作成
-      const arrowHtml = `
-        <div style="
-          width: 0; 
-          height: 0; 
-          border-left: 6px solid transparent;
-          border-right: 6px solid transparent;
-          border-bottom: 16px solid black; 
-          transform: rotate(${rotation}deg);
-          transform-origin: center center;
-          opacity: 0.9;
-          filter: drop-shadow(0px 0px 2px rgba(255,255,255,1));
-        "></div>
-      `;
-
-      const arrowIcon = L.divIcon({
-        className: "camera-arrow-icon",
-        html: arrowHtml,
-        iconSize: [12, 16], // アイコンサイズ
-        iconAnchor: [6, 8], // 中心点
-      });
-
+      const arrowIcon = createArrowIcon(rotation);
       const marker = L.marker([cam.lat, cam.lng], { icon: arrowIcon });
 
-      marker.on("click", () => {
+      marker.on("click", (e) => {
+        // 既存のポップアップがあれば閉じる
+        map.closePopup();
+
         const ts = new Date().getTime();
+        // URLにクエリパラメータがすでにあるかチェック
         const separator = cam.imageUrl.includes("?") ? "&" : "?";
+        // キャッシュバスティング
         const urlWithTs = `${cam.imageUrl}${separator}_=${ts}`;
 
         const popupHtml = `
-          <div class="cam-popup-content" style="width:${TAB_WIDTH}px;">
+          <div class="cam-popup-content" style="width:${TAB_WIDTH}px; font-family: sans-serif;">
             <div style="
               display:flex; justify-content:space-between; align-items:center;
               margin-bottom:6px; border-bottom:1px solid #ccc; padding-bottom:4px;
             ">
               <span style="font-weight:bold; font-size:14px;">${cam.name}</span>
-              <button class="cam-popup-close" style="cursor:pointer; border:1px solid #999; background:#fff; border-radius:4px;">×</button>
+              <button class="cam-popup-close" style="cursor:pointer; border:1px solid #999; background:#fff; border-radius:4px; font-weight:bold; padding:0 4px;">×</button>
             </div>
             
             <div style="
               width: 100%;
-              height: ${TAB_HEIGHT}px;
+              min-height: ${TAB_HEIGHT}px;
               display: flex; align-items: center; justify-content: center;
               background: #000; margin-bottom: 4px;
             ">
               <img src="${urlWithTs}" alt="${cam.name}" 
-                   style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                   style="max-width: 100%; max-height: 100%; object-fit: contain; display:block;"
+                   onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\'color:white;font-size:12px\'>Image Load Error</span>';">
             </div>
             
             ${cam.note ? `<div style="font-size:11px; color:#555;">${cam.note}</div>` : ""}
@@ -180,36 +195,45 @@ console.log("[CAM] init camera-layer.js");
           closeButton: false,
           autoPan: true,
           className: "cam-popup",
+          offset: [0, -10]
         })
         .setLatLng([cam.lat, cam.lng])
         .setContent(popupHtml)
         .openOn(map);
 
+        // ポップアップが開いた後のイベント処理（閉じるボタン）
+        // Leafletのpopupopenイベント、またはsetTimeoutでDOM取得
         setTimeout(() => {
           const container = popup.getElement();
           if (!container) return;
           const btn = container.querySelector(".cam-popup-close");
           if (btn) {
-            btn.addEventListener("click", () => {
-              map.closePopup(popup);
+            btn.addEventListener("click", (ev) => {
+              ev.stopPropagation(); // マップクリックへの伝播防止
+              map.closePopup();
             });
           }
-        }, 100);
+        }, 50);
       });
 
-      return marker;
+      markers.push(marker);
     });
 
     const cameraLayer = L.layerGroup(markers);
 
     if (layersControl) {
-      layersControl.addOverlay(cameraLayer, "Live Cameras");
+      // 名称をシンプルに「ライブカメラ」としました
+      layersControl.addOverlay(cameraLayer, "ライブカメラ");
     } else {
       cameraLayer.addTo(map);
     }
-    console.log("[CAM] camera layer added");
+    console.log("[CAM] camera layer added (" + markers.length + " cameras)");
   }
 
   // 読み込み完了後に初期化開始
-  window.addEventListener("load", initCamera);
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+      setTimeout(initCamera, 100);
+  } else {
+      window.addEventListener("load", initCamera);
+  }
 })();
